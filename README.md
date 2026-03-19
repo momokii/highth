@@ -1,0 +1,945 @@
+# Higth - IoT Sensor Query System
+
+**A production-grade IoT sensor data query system optimized for time-series workloads with PostgreSQL materialized views, advanced indexing, and Redis caching.**
+
+---
+
+## Table of Contents
+
+- [Repository Structure](#repository-structure)
+- [What is Higth?](#what-is-higth)
+- [Quick Start (15 Minutes)](#quick-start-15-minutes)
+- [Detailed Setup Guide](#detailed-setup-guide)
+- [Understanding the System](#understanding-the-system)
+- [Running Experiments](#running-experiments)
+- [Understanding Your Results](#understanding-your-results)
+- [Generating More Data](#generating-more-data)
+- [Reference Guide](#reference-guide)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Repository Structure
+
+```
+highth/
+├── cmd/                        # Application entry points
+│   └── api/
+│       └── main.go             # API server entry point
+│
+├── internal/                   # Private application code (not importable by other apps)
+│   ├── cache/                  # Caching layer
+│   │   └── redis_cache.go      # Redis cache implementation (LRU, TTL)
+│   │
+│   ├── config/                 # Configuration management
+│   │   └── config.go           # Environment variable loading & app config
+│   │
+│   ├── handler/                # HTTP request handlers (controllers)
+│   │   ├── health_handler.go   # Health check endpoint
+│   │   └── sensor_handler.go   # Sensor readings & stats endpoints
+│   │
+│   ├── middleware/             # HTTP middleware
+│   │   ├── compression.go      # Gzip response compression
+│   │   ├── metrics.go          # Prometheus metrics collection
+│   │   └── prometheus.go       # /metrics endpoint handler
+│   │
+│   ├── model/                  # Data models (structs)
+│   │   ├── health.go           # Health check response model
+│   │   └── sensor.go           # Sensor reading & stats models
+│   │
+│   ├── repository/             # Database access layer
+│   │   └── sensor_repo.go      # PostgreSQL queries & operations
+│   │
+│   └── service/                # Business logic layer
+│       └── sensor_service.go   # Sensor data processing & caching logic
+│
+├── scripts/                    # Utility scripts
+│   ├── schema/                 # Database schema & migrations
+│   │   ├── migrations/         # SQL migration files
+│   │   │   ├── 002_advanced_indexes.sql      # BRIN & covering indexes
+│   │   │   └── 004_materialized_views.sql   # Hourly/daily/global stats MVs
+│   │   └── (schema.sql)        # Initial schema (if needed)
+│   │
+│   ├── docker-compose.yml      # Docker services definition
+│   ├── generate_data.go        # Go data generator (slower)
+│   ├── generate_data_fast.py   # Python data generator (fast, uses COPY)
+│   ├── refresh_materialized_views.sh  # MV refresh automation
+│   └── test-runner.sh          # Load testing with Vegeta
+│
+├── docs/                       # Documentation
+│   ├── implementation/         # Implementation guides
+│   │   └── (detailed guides for specific optimizations)
+│   ├── api-spec.md             # REST API specification
+│   ├── architecture.md         # System architecture design
+│   ├── stack.md                # Technology stack details
+│   ├── testing.md              # Testing methodology
+│   ├── ui-consideration.md     # UI/UX considerations
+│   └── README.md               # Additional project documentation
+│
+├── data/                       # Persistent data storage (Docker volumes)
+│   ├── postgres/               # PostgreSQL database files
+│   └── redis/                  # Redis persistence file
+│
+├── test-results/               # Load test results
+│   └── 20260317_110226/        # Test run outputs
+│
+├── bin/                        # Compiled binaries
+│   ├── api                     # Compiled API server binary
+│   └── generate_data           # Compiled data generator binary
+│
+├── docker-compose.yml          # Docker services (postgres, redis, api)
+├── Dockerfile                  # API container build definition
+├── .env                        # Environment variables (not in git)
+├── .env.example                # Environment variables template
+├── go.mod                      # Go module definition
+├── go.sum                      # Go dependencies lock file
+├── .gitignore                  # Git ignore patterns
+└── README.md                   # This file
+```
+
+### Folder Purposes
+
+| Folder | Purpose | Description |
+|--------|---------|-------------|
+| **`cmd/`** | Entry Points | Contains the main application entry points. `cmd/api/main.go` is the API server's entry point that initializes all components (config, database, cache, handlers) and starts the HTTP server. |
+| **`internal/`** | Private Code | Application code that should not be imported by other projects. Follows Go's internal package convention. Contains all the business logic, handlers, and data access layers. |
+| **`scripts/`** | Utilities | Standalone scripts for data generation, testing, database operations, and Docker orchestration. Can be run independently of the main application. |
+| **`docs/`** | Documentation | Comprehensive documentation including API specs, architecture design, implementation guides, and technical decisions. |
+| **`data/`** | Data Storage | Docker volume mount points. PostgreSQL database files and Redis persistence files are stored here. Data persists across container restarts. |
+| **`test-results/`** | Test Outputs | Load test results generated by `test-runner.sh`. Each test run creates a timestamped folder with detailed metrics. |
+| **`bin/`** | Compiled Binaries | Output directory for compiled Go executables. Contains `api` (server) and `generate_data` (generator). |
+
+### Key Files Explained
+
+| File | Purpose | Description |
+|------|---------|-------------|
+| **`docker-compose.yml`** | Container Orchestration | Defines 3 services: `api` (built from Dockerfile), `postgres` (PostgreSQL 16), and `redis` (Redis 7). Configures networking, volumes, and health checks. |
+| **`Dockerfile`** | Container Build | Multi-stage build for the API. Stage 1: Build Go binary. Stage 2: Minimal Alpine image with only the binary. Results in ~20MB image. |
+| **`.env`** | Environment Config | Contains sensitive configuration (database passwords, Redis settings). NOT in git. Use `.env.example` as template. |
+| **`go.mod`** | Go Dependencies | Lists all Go module dependencies. Defines the module path and required Go version (1.21+). |
+| **`generate_data_fast.py`** | Data Generator | Fast data generator using PostgreSQL COPY command. Generates 5,000 rows/sec. Creates realistic IoT sensor data with Zipf distribution. |
+
+### Application Architecture Flow
+
+```
+Request Flow:
+─────────────
+1. HTTP Request → [handler]
+2. Handler → [service] (business logic)
+3. Service → [cache] (check Redis)
+4. Cache miss → [repository] (database query)
+5. Repository → [database]
+6. Response flows back through cache → service → handler → HTTP Response
+
+File Responsibilities:
+──────────────────────
+├── handler/    → Parse HTTP requests, call services, format responses
+├── service/    → Business logic, caching decisions, coordinate repository calls
+├── repository/ → SQL queries, database connection management
+├── model/      → Data structures (request/response DTOs, database models)
+├── middleware/ → Cross-cutting concerns (metrics, compression, logging)
+├── config/     → Configuration loading from environment variables
+└── cache/      → Cache interface implementation (Redis)
+```
+
+---
+
+## What is Higth?
+
+**Higth** is a production-grade IoT sensor query system designed for experimenting with time-series data at scale. It simulates a real-world scenario where thousands of IoT devices continuously send sensor readings that need to be queried and analyzed.
+
+### Key Features
+
+- **Time-Series Optimized**: BRIN indexes for efficient time-range queries (99% smaller than B-tree)
+- **Materialized Views**: Pre-computed aggregations for 100-200x faster dashboard queries
+- **Smart Caching**: Redis-based LRU cache with 30s TTL
+- **Connection Pooling**: PgBouncer integration for high concurrency
+- **Prometheus Metrics**: Built-in observability for monitoring
+- **Load Testing**: Included test infrastructure for performance experiments
+
+### Tech Stack
+
+| Component | Technology | Purpose |
+|-----------|-----------|---------|
+| **API** | Go 1.21+ | High-performance REST API |
+| **Database** | PostgreSQL 15+ | Time-series data storage with advanced optimizations |
+| **Cache** | Redis 7+ | Query result caching |
+| **Pool** | PgBouncer | PostgreSQL connection pooling |
+| **Metrics** | Prometheus | Performance monitoring |
+| **Testing** | Vegeta | HTTP load testing |
+
+---
+
+## Quick Start (15 Minutes)
+
+### Prerequisites
+
+**Hardware:**
+- CPU: 2+ cores recommended
+- RAM: 4+ GB (8 GB recommended for large datasets)
+- Disk: 10+ GB free (50+ GB for 50M row experiments)
+
+**Software:**
+- Docker & Docker Compose
+- Go 1.21+ (for running API locally)
+- Python 3.10+ (for data generation)
+- curl (for testing API)
+
+### Installation
+
+```bash
+# 1. Copy environment template
+cp .env.example .env
+
+# 2. Start all services (PostgreSQL, Redis, API)
+docker-compose up -d
+
+# 3. Wait for services to be healthy (30 seconds)
+docker-compose ps
+
+# 4. Initialize database
+# Step 1: Run base schema initialization (creates tables and basic indexes)
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/001_init_schema.sql
+
+# Step 2: Generate test data (1,000 rows for quick start)
+./scripts/generate_data_fast.py 1000 --devices 10 --days 1
+
+# Step 3: Create performance indexes
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
+
+# Step 4: Create materialized views
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
+
+# 5. Test the API
+curl http://localhost:8080/health
+curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=10"
+```
+
+**IMPORTANT:** Run the database migrations in this exact order:
+1. `001_init_schema.sql` - Creates the base table
+2. Generate data - Populates the table with test data
+3. `002_advanced_indexes.sql` - Creates performance indexes (requires data)
+4. `004_materialized_views.sql` - Creates analytics views (requires data)
+
+
+The API will start on `http://localhost:8080`
+
+### Verify Setup
+
+```bash
+# Check health endpoint
+curl http://localhost:8080/health
+
+# Expected response:
+# {"status":"healthy","database":"connected","cache":"connected"}
+
+# View all services
+docker-compose ps
+
+# Expected output: 3 services running (api, postgres, redis)
+```
+
+---
+
+## Detailed Setup Guide
+
+### Option A: Docker Setup (Recommended)
+
+**Step 1: Configure Environment**
+
+```bash
+# Copy environment template
+cp .env.example .env
+
+# Edit if needed (defaults work for most cases)
+# .env includes:
+# - POSTGRES_PORT=5434 (avoids conflict with local PostgreSQL)
+# - REDIS_PORT=6380 (avoids conflict with local Redis)
+# - API_PORT=8080
+```
+
+**Step 2: Start Services**
+
+```bash
+# Start PostgreSQL, Redis, and API
+docker-compose up -d
+
+# Check all services are running
+docker-compose ps
+
+# View logs if needed
+docker-compose logs -f api
+docker-compose logs -f postgres
+```
+
+**Step 3: Initialize Database**
+
+```bash
+# Apply advanced indexes migration
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
+
+# Apply materialized views migration
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
+
+# Verify tables created
+docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dt"
+
+# Verify materialized views
+docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dmv"
+```
+
+### Option B: Local Setup (Advanced)
+
+**Requirements:**
+- PostgreSQL 15+ installed locally
+- Redis 7+ installed locally
+- Go 1.21+ installed
+
+**Steps:**
+
+```bash
+# 1. Start PostgreSQL and Redis locally
+# (Use your preferred method: brew, apt, systemctl, etc.)
+
+# 2. Create database
+createdb sensor_db
+
+# 3. Run schema initialization
+psql -U $USER -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
+psql -U $USER -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
+
+# 4. Configure environment variables
+export POSTGRES_HOST=localhost
+export POSTGRES_PORT=5432
+export REDIS_HOST=localhost
+export REDIS_PORT=6379
+
+# 5. Run API
+go run cmd/api/main.go
+```
+
+---
+
+## Understanding the System
+
+### Architecture Overview
+
+```
+┌─────────────┐
+│   Client    │
+└──────┬──────┘
+       │ HTTP
+       ▼
+┌─────────────────────────────────────────────────┐
+│              API Layer (Go)                      │
+│  ┌─────────┐  ┌──────────┐  ┌──────────────┐  │
+│  │ Handlers│  │Metrics MW│  │Compression MW│  │
+│  └────┬────┘  └──────────┘  └──────────────┘  │
+└───────┼──────────────────────────────────────────┘
+        │
+        ▼
+┌─────────────────────────────────────────────────┐
+│              Service Layer                       │
+│         Business Logic & Caching                 │
+└───────┼──────────────────────────────────────────┘
+        │
+        ├─────────────┬─────────────┐
+        ▼             ▼             ▼
+┌──────────────┐ ┌──────────┐ ┌─────────────┐
+│ Redis Cache  │ │PgBouncer │ │ PostgreSQL  │
+│  (30s TTL)   │ │   Pool   │ │  Database   │
+└──────────────┘ └──────────┘ └─────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    ▼              ▼              ▼
+              ┌─────────┐  ┌──────────┐  ┌──────────┐
+              │  Base   │  │ Material │  │ Indexes  │
+              │  Table  │  │  Views   │  │ (BRIN,  │
+              │         │  │          │  │Covering) │
+              └─────────┘  └──────────┘  └──────────┘
+```
+
+### API Endpoints
+
+#### 1. Health Check
+```bash
+GET /health
+```
+**Response:**
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "cache": "connected"
+}
+```
+
+#### 2. Query Sensor Readings
+```bash
+GET /api/v1/sensor-readings?device_id={id}&limit={n}&reading_type={type}
+```
+
+**Parameters:**
+- `device_id` (required): Device identifier (e.g., `sensor-000001`)
+- `limit` (optional): Max results (default: 100, max: 10000)
+- `reading_type` (optional): Filter by type (`temperature`, `humidity`, `pressure`)
+- `start_time` (optional): ISO 8601 timestamp
+- `end_time` (optional): ISO 8601 timestamp
+
+**Example:**
+```bash
+curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=10&reading_type=temperature"
+```
+
+**Response:**
+```json
+{
+  "device_id": "sensor-000001",
+  "readings": [
+    {
+      "timestamp": "2026-03-15T10:30:00Z",
+      "reading_type": "temperature",
+      "value": 23.5,
+      "unit": "celsius"
+    }
+  ],
+  "count": 10
+}
+```
+
+#### 3. Get Statistics
+```bash
+GET /api/v1/stats?device_id={id}&reading_type={type}&period={hour|day}
+```
+
+**Parameters:**
+- `device_id` (optional): Specific device or global stats
+- `reading_type` (optional): Filter by type
+- `period` (optional): `hour` or `day` (default: `hour`)
+
+**Example:**
+```bash
+curl "http://localhost:8080/api/v1/stats?reading_type=temperature&period=day"
+```
+
+**Response:**
+```json
+{
+  "reading_type": "temperature",
+  "statistics": {
+    "count": 1500000,
+    "avg": 22.45,
+    "min": 15.2,
+    "max": 35.8,
+    "median": 22.3
+  }
+}
+```
+
+#### 4. Prometheus Metrics
+```bash
+GET /metrics
+```
+Returns Prometheus-format metrics for monitoring.
+
+### Database Schema
+
+**Main Table: `sensor_readings`**
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGINT | Primary key |
+| device_id | VARCHAR(50) | Device identifier (e.g., `sensor-000001`) |
+| timestamp | TIMESTAMPTZ | Reading timestamp (UTC) |
+| reading_type | VARCHAR(20) | Type: `temperature`, `humidity`, `pressure` |
+| value | DECIMAL(10,2) | Sensor value |
+| unit | VARCHAR(20) | Unit of measurement |
+
+**Indexes:**
+- Primary key B-tree index (on `id`)
+- BRIN index on `timestamp` (for time-series queries, 99% smaller)
+- Covering index on `(device_id, timestamp, ...)` for hot devices
+- Composite index on `(device_id, timestamp)`
+
+**Materialized Views:**
+- **`mv_device_hourly_stats`**: Pre-computed hourly aggregations (100x faster)
+- **`mv_device_daily_stats`**: Pre-computed daily aggregations with percentiles (200x faster)
+- **`mv_global_stats`**: Global statistics across all devices (instant response)
+
+---
+
+## Running Experiments
+
+### Experiment 1: Query Single Device
+
+**Objective:** Fetch recent readings from a specific device
+
+```bash
+# Query for last 100 readings from sensor-000001
+curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=100"
+
+# Measure response time
+time curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=100" > /dev/null
+```
+
+**Expected Results:**
+- First query (cold cache): 50-200 ms
+- Subsequent queries (warm cache): 1-5 ms
+
+### Experiment 2: Cold vs Warm Cache
+
+**Objective:** Measure cache effectiveness
+
+```bash
+# Flush Redis cache
+docker exec highth-redis redis-cli FLUSHALL
+
+# Measure cold cache query
+time curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=100"
+
+# Measure warm cache queries (run 5 times)
+for i in {1..5}; do
+  time curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=100"
+done
+```
+
+**Expected Results:**
+- Cold cache: 50-200 ms
+- Warm cache: 1-5 ms (40x faster)
+
+### Experiment 3: Concurrent Load Testing
+
+**Objective:** Measure performance under load
+
+```bash
+# Run the included load test script
+./scripts/test-runner.sh concurrent
+
+# Results saved to test-results/ with timestamp
+```
+
+**Metrics to Watch:**
+- p50 latency: Should be < 1 ms with optimizations
+- p95 latency: Should be < 5 ms
+- p99 latency: Should be < 10 ms
+- Error rate: Should be 0%
+
+### Experiment 4: Materialized Views vs Raw Queries
+
+**Objective:** Compare MV performance to base table
+
+```bash
+# Connect to database
+docker exec -it highth-postgres psql -U sensor_user -d sensor_db
+
+# Enable timing
+\timing on
+
+# Base table query (slow)
+SELECT device_id, date_trunc('hour', timestamp) as hour, reading_type, avg(value)
+FROM sensor_readings
+WHERE device_id = 'sensor-000001' AND timestamp >= NOW() - INTERVAL '24 hours'
+GROUP BY device_id, date_trunc('hour', timestamp), reading_type;
+
+# Materialized view query (fast!)
+SELECT * FROM mv_device_hourly_stats
+WHERE device_id = 'sensor-000001' AND hour >= NOW() - INTERVAL '24 hours'
+ORDER BY hour DESC;
+```
+
+**Expected Results:**
+- Base table: 50-200 ms
+- Materialized view: 1-5 ms (100x faster)
+
+---
+
+## Running Load Tests
+
+The Higth project includes a comprehensive load testing suite powered by [Vegeta](https://github.com/tsenart/vegeta), an HTTP load testing tool.
+
+### Quick Start
+
+```bash
+# Run all tests
+./scripts/test-runner.sh
+
+# Run specific test
+./scripts/test-runner.sh concurrent
+./scripts/test-runner.sh hot_device
+./scripts/test-runner.sh large_n
+```
+
+### Test Scenarios
+
+The test suite includes **6 comprehensive scenarios**:
+
+| Test | Purpose | Duration | Target |
+|------|---------|----------|--------|
+| **Health Check** | Verify API is responding | 10s | p50 ≤ 10ms |
+| **Cold Start** | Measure performance with empty cache | 10s | p50 ≤ 600ms |
+| **Baseline** | Measure performance with warm cache | 30s | p50 ≤ 50ms |
+| **Concurrent** ⭐ | **PRIMARY TEST** - 50 RPS load | 60s | p50 ≤ 500ms, p95 ≤ 800ms |
+| **Hot Device** | Simulate skewed access (90% to one device) | 30s | p50 ≤ 500ms, p99 ≤ 2×p95 |
+| **Large N** | Test large result sets (limit=500) | 30s | p50 ≤ 500ms |
+
+### Understanding Test Results
+
+Test results are saved to `test-results/TIMESTAMP/`:
+
+```
+test-results/20260317_110226/
+├── health.txt          # Health check results
+├── cold_start.txt      # Cold cache performance
+├── baseline.txt        # Warm cache baseline
+├── concurrent.txt      # ⭐ PRIMARY TEST RESULTS
+├── hot_device.txt      # Skewed access pattern
+└── large_n.txt         # Large result set test
+```
+
+### Interpreting Results
+
+Each result file contains Vegeta output format:
+
+```
+Requests: 3000 @ 50.02 RPS
+Duration: 59.98s
+
+Latencies:
+  Mean:   890.98 μs
+  p50:    779.37 μs  ← Median: 50% of requests faster than this
+  p95:    1.47 ms    ← 95th percentile: 95% of requests faster than this
+  p99:    2.57 ms    ← 99th percentile: 99% of requests faster than this
+  Max:    34.35 ms
+
+Bytes In: 138 KB (46 bytes/response)
+Success Rate: 100% (all HTTP 200 OK)
+```
+
+**What These Metrics Mean:**
+
+- **p50 (Median)**: Half of all requests completed faster than this time
+- **p95**: 95% of requests completed faster than this time
+- **p99**: 99% of requests completed faster than this time
+- **RPS**: Requests Per Second - how much load was applied
+- **Success Rate**: Percentage of requests that succeeded (HTTP 2xx/3xx)
+
+**Performance Targets:**
+- p50 ≤ 500 ms ✅ (Actual: 0.78 ms - 642× better!)
+- p95 ≤ 800 ms ✅ (Actual: 1.47 ms - 544× better!)
+
+### Test Results Summary
+
+After running tests, a color-coded summary is displayed:
+
+```
+╔════════════════════════════════════════════════════════════════╗
+║              Load Test Results Summary                           ║
+╠════════════════════════════════════════════════════════════════╣
+║  Test            Status    p50       p95       p99    Errors    ║
+║ ────────────────────────────────────────────────────────────────── ║
+║  Health          ✅ PASS   0.95 ms   24.5 ms   24.5 ms  0%      ║
+║  Cold Start      ✅ PASS   0.78 ms   4.28 ms   4.28 ms   0%      ║
+║  Baseline        ✅ PASS   0.96 ms   1.9 ms    2.25 ms   0%      ║
+║  **Concurrent**  ✅ PASS   0.78 ms   1.47 ms   2.57 ms   0%      ║
+║  Hot Device      ✅ PASS   0.69 ms   1.17 ms   1.67 ms   0%      ║
+║  Large N         ✅ PASS   0.70 ms   0.99 ms   1.09 ms   0%      ║
+╚════════════════════════════════════════════════════════════════╝
+```
+
+**All tests passed! Performance targets exceeded by 100-600x.**
+
+### Running Individual Tests
+
+**Test 1: Health Check**
+```bash
+./scripts/test-runner.sh health
+```
+Verifies the API is responding and healthy.
+
+**Test 2: Cold Start**
+```bash
+./scripts/test-runner.sh cold_start
+```
+Measures performance when cache is empty (worst case).
+
+**Test 3: Baseline**
+```bash
+./scripts/test-runner.sh baseline
+```
+Measures normal performance with warm cache.
+
+**Test 4: Concurrent (PRIMARY TEST)** ⭐
+```bash
+./scripts/test-runner.sh concurrent
+```
+Applies 50 RPS load for 60 seconds to verify system can handle target load.
+
+**Test 5: Hot Device**
+```bash
+./scripts/test-runner.sh hot_device
+```
+Simulates realistic skewed access where 90% of queries go to one device.
+
+**Test 6: Large N**
+```bash
+./scripts/test-runner.sh large_n
+```
+Tests performance with large result sets (limit=500 rows).
+
+### Custom Load Testing
+
+You can also run custom tests with Vegeta directly:
+
+```bash
+# Define your test
+echo "GET http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=100" | \
+  vegeta attack -duration=30s -rate=10 | vegeta report
+
+# Generate report
+echo "GET http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=100" | \
+  vegeta attack -duration=30s -rate=10 > results.bin
+vegeta report results.bin
+```
+
+### Analyzing Results Further
+
+To analyze specific test results:
+
+```bash
+# View detailed results
+cat test-results/20260317_110226/concurrent.txt
+
+# Get summary statistics
+vegeta report --type=text test-results/20260317_110226/concurrent.txt
+
+# Generate JSON output for further analysis
+vegeta report --type=json test-results/20260317_110226/concurrent.txt > metrics.json
+```
+
+### Performance Baselines
+
+**Good Performance** (you're on track):
+- p50 < 10 ms with warm cache
+- p95 < 50 ms under load
+- Error rate = 0%
+
+**Excellent Performance** (exceeds targets):
+- p50 < 1 ms ✅ (Current system achieves this!)
+- p95 < 5 ms ✅ (Current system achieves this!)
+- Error rate = 0% ✅
+
+**Needs Investigation**:
+- p50 > 100 ms → Check database indexes
+- p95 > 500 ms → Check query plans, caching
+- Error rate > 1% → Check logs for failures
+
+## Understanding Your Results
+
+### Interpreting Metrics
+
+#### Latency Percentiles (p50, p95, p99)
+
+**Definition:**
+- **p50**: Median latency (50% of requests faster than this)
+- **p95**: 95th percentile (95% of requests faster than this)
+- **p99**: 99th percentile (99% of requests faster than this)
+
+**Why It Matters:**
+- p50 tells you the "typical" user experience
+- p95 tells you the "good enough" experience for most users
+- p99 tells you the "worst case" experience (outliers)
+
+**Example:**
+```
+p50: 0.78 ms
+p95: 1.47 ms
+p99: 2.57 ms
+```
+This means:
+- 50% of queries complete in <0.78ms
+- 95% of queries complete in <1.47ms
+- 99% of queries complete in <2.57ms
+
+#### Performance Baselines
+
+| Query Type | Without Opt | With Opt | Improvement |
+|------------|-------------|----------|-------------|
+| Single device | 100-200 ms | 1-5 ms | 40x |
+| Time range | 500-1000 ms | 5-10 ms | 100x |
+| Aggregation | 2000-5000 ms | <1 ms | 5000x |
+
+---
+
+## Generating More Data
+
+### Data Generation Options
+
+```bash
+# Small dataset (1M rows) - 2 minutes, 300 MB
+python3 scripts/generate_data_fast.py 1000000
+
+# Medium dataset (10M rows) - 15 minutes, 3 GB
+python3 scripts/generate_data_fast.py 10000000
+
+# Large dataset (50M rows) - 90 minutes, 15 GB
+python3 scripts/generate_data_fast.py 50000000
+```
+
+### Custom Data Generation
+
+Edit `scripts/generate_data_fast.py`:
+
+```python
+# Change number of devices
+NUM_DEVICES = 1000  # Fewer devices
+
+# Change time range
+DATA_DURATION_DAYS = 365  # Full year
+
+# Add custom reading types
+READING_TYPES = ['temperature', 'humidity', 'pressure', 'co2', 'light']
+```
+
+---
+
+## Reference Guide
+
+### Quick Commands
+
+```bash
+# === Service Management ===
+docker-compose up -d              # Start all services
+docker-compose down               # Stop all services
+docker-compose restart api        # Restart API
+docker-compose logs -f api        # View API logs
+
+# === Database ===
+docker exec -it highth-postgres psql -U sensor_user -d sensor_db
+docker exec highth-postgres psql -U sensor_user -d sensor_db -c "SELECT count(*) FROM sensor_readings;"
+
+# === Data Generation ===
+python3 scripts/generate_data_fast.py 1000000
+
+# === Migrations ===
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
+
+# === Testing ===
+./scripts/test-runner.sh
+
+# === Materialized Views ===
+./scripts/refresh_materialized_views.sh all
+
+# === Cache ===
+docker exec highth-redis redis-cli FLUSHALL
+docker exec highth-redis redis-cli KEYS "*"
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api/v1/sensor-readings` | GET | Query sensor readings |
+| `/api/v1/stats` | GET | Get statistics |
+| `/metrics` | GET | Prometheus metrics |
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+#### Port Conflicts
+
+```bash
+# Check what's using the port
+sudo lsof -i :5434  # PostgreSQL
+sudo lsof -i :6380  # Redis
+sudo lsof -i :8080  # API
+
+# Change port in .env file
+```
+
+#### Slow Queries
+
+```bash
+# Check query plan
+docker exec -it highth-postgres psql -U sensor_user -d sensor_db
+EXPLAIN ANALYZE SELECT * FROM sensor_readings WHERE device_id = 'sensor-000001';
+
+# Look for: Index Scan (good), Seq Scan (bad)
+```
+
+#### Cache Not Working
+
+```bash
+# Verify Redis is running
+docker exec highth-redis redis-cli PING
+
+# Check cache keys
+docker exec highth-redis redis-cli KEYS "*"
+```
+
+#### Data Persistence Issues
+
+```bash
+# Check data folders exist
+ls -la data/postgres
+ls -la data/redis
+
+# Verify docker-compose.yml has correct volume mounts
+grep -A 2 "volumes:" docker-compose.yml
+
+# Should show:
+# ./data/postgres:/var/lib/postgresql/data
+# ./data/redis:/data
+```
+
+---
+
+## Additional Resources
+
+### Documentation Files
+
+- **`docs/api-spec.md`** - Complete REST API specification with all endpoints
+- **`docs/architecture.md`** - Detailed system architecture and design decisions
+- **`docs/stack.md`** - Technology stack details and version requirements
+- **`docs/testing.md`** - Comprehensive testing methodology
+- **`docs/ui-consideration.md`** - UI/UX design considerations
+
+### Implementation Guides
+
+The `docs/implementation/` folder contains detailed guides for:
+- Advanced indexing strategies
+- Materialized view design
+- Monitoring and metrics setup
+- Performance optimization techniques
+
+---
+
+## Conclusion
+
+**Higth** provides a complete platform for IoT time-series experiments at scale with a clean, well-organized codebase following Go best practices.
+
+### Key Takeaways
+
+1. **Clean Architecture**: Separation of concerns with handler/service/repository layers
+2. **Production-Ready**: Docker-based deployment with health checks and auto-restart
+3. **High Performance**: BRIN indexes, materialized views, Redis caching
+4. **Observable**: Prometheus metrics for monitoring
+5. **Well-Documented**: Comprehensive docs for setup and experimentation
+
+### Next Steps
+
+1. ✅ Complete Quick Start
+2. ✅ Run Basic Experiments
+3. ✅ Explore Performance Experiments
+4. ✅ Generate More Data as needed
+5. ✅ Customize for your experiments
+
+---
+
+**Happy Experimenting!**
+
+*Last Updated: 2026-03-18* | *Version: 1.0.0*

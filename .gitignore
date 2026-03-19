@@ -1,0 +1,45 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+/tmp/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+/vendor/
+
+# Go workspace file
+go.work
+
+# Environment variables
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test results
+test-results/
+
+# Data directories (PostgreSQL and Redis data)
+data/
+
+# Agent continuity state (git-ignored, .gitkeep tracks structure)
+.claude/state/*.json
+.claude/state/*.md
+!/.claude/state/.gitkeep

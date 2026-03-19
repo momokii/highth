@@ -1,0 +1,604 @@
+# API Specification
+
+This document defines the complete API contract for the High-Performance IoT Sensor Query System.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Base URL](#base-url)
+- [Authentication](#authentication)
+- [Endpoints](#endpoints)
+- [Request/Response Conventions](#requestresponse-conventions)
+- [Error Handling](#error-handling)
+- [Rate Limiting](#rate-limiting)
+
+---
+
+## Overview
+
+This API provides a RESTful interface for querying IoT sensor telemetry data. All data access is mediated through the API — no direct database access is permitted.
+
+### Core Query Pattern
+
+The primary use case is retrieving the most recent N readings for a specific device:
+
+```
+GET /api/v1/sensor-readings?device_id={device_id}&limit={limit}
+```
+
+### API Design Principles
+
+1. **RESTful** — Resource-based URLs with standard HTTP methods
+2. **JSON** — Request and response bodies use JSON format
+3. **Versioned** — URL path includes API version (v1)
+4. **Stateless** — No server-side session state
+5. **Idempotent** — Safe methods (GET, HEAD, OPTIONS) are idempotent
+
+---
+
+## Base URL
+
+### Development
+
+```
+http://localhost:8080/api/v1
+```
+
+### Production
+
+```
+https://api.example.com/api/v1
+```
+
+---
+
+## Authentication
+
+> **Note:** For this portfolio project, authentication is not implemented. In production, you would typically use:
+>
+> - JWT tokens passed via `Authorization: Bearer {token}` header
+> - API keys passed via `X-API-Key: {key}` header
+> - OAuth 2.0 for third-party access
+
+---
+
+## Endpoints
+
+### Get Sensor Readings
+
+Retrieve the most recent N sensor readings for a specific device.
+
+#### Endpoint
+
+```
+GET /api/v1/sensor-readings
+```
+
+#### Request Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `device_id` | string | Yes | - | Device identifier to fetch readings for |
+| `limit` | integer | No | 10 | Number of records to return (1-500) |
+| `reading_type` | string | No | - | Filter by reading type (e.g., "temperature", "humidity") |
+
+#### Example Request
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-001&limit=10"
+```
+
+#### Success Response (200 OK)
+
+Returns an array of sensor readings in reverse chronological order (newest first).
+
+```json
+{
+  "data": [
+    {
+      "id": "12345678",
+      "device_id": "sensor-001",
+      "timestamp": "2025-01-15T10:30:00Z",
+      "reading_type": "temperature",
+      "value": 23.45,
+      "unit": "celsius",
+      "metadata": {
+        "firmware_version": "2.1.0",
+        "battery_level": 87,
+        "location": {
+          "building": "Building A",
+          "floor": 3,
+          "room": "301"
+        }
+      }
+    },
+    {
+      "id": "12345677",
+      "device_id": "sensor-001",
+      "timestamp": "2025-01-15T10:29:00Z",
+      "reading_type": "temperature",
+      "value": 23.42,
+      "unit": "celsius",
+      "metadata": {
+        "firmware_version": "2.1.0",
+        "battery_level": 87
+      }
+    }
+  ],
+  "meta": {
+    "count": 2,
+    "limit": 10,
+    "device_id": "sensor-001",
+    "reading_type": null
+  }
+}
+```
+
+#### Response Fields
+
+##### data array
+
+Each object in the `data` array represents a single sensor reading:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier for the reading |
+| `device_id` | string | Device identifier |
+| `timestamp` | string | ISO 8601 timestamp in UTC |
+| `reading_type` | string | Type of sensor reading |
+| `value` | number | Sensor value |
+| `unit` | string | Unit of measurement |
+| `metadata` | object (nullable) | Device-specific metadata (JSONB) |
+
+##### meta object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `count` | integer | Number of readings returned |
+| `limit` | integer | Maximum number requested |
+| `device_id` | string | Device identifier from request |
+| `reading_type` | string (nullable) | Reading type filter from request |
+
+#### Error Responses
+
+##### 400 Bad Request
+
+Invalid request parameters.
+
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "limit must be between 1 and 500",
+    "timestamp": "2025-01-15T10:30:00Z",
+    "details": {
+      "parameter": "limit",
+      "provided": 0,
+      "constraints": {
+        "min": 1,
+        "max": 500
+      }
+    }
+  }
+}
+```
+
+##### 404 Not Found
+
+Device has no readings in the database.
+
+```json
+{
+  "error": {
+    "code": "DEVICE_NOT_FOUND",
+    "message": "No readings found for device_id: sensor-001",
+    "timestamp": "2025-01-15T10:30:00Z"
+  }
+}
+```
+
+##### 500 Internal Server Error
+
+Unexpected server error.
+
+```json
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred",
+    "timestamp": "2025-01-15T10:30:00Z",
+    "request_id": "req_abc123"
+  }
+}
+```
+
+---
+
+### Health Check
+
+Check API health status (useful for load balancers and monitoring).
+
+#### Endpoint
+
+```
+GET /health
+```
+
+#### Example Request
+
+```bash
+curl -X GET "http://localhost:8080/health"
+```
+
+#### Success Response (200 OK)
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-01-15T10:30:00Z",
+  "checks": {
+    "database": {
+      "status": "healthy",
+      "latency_ms": 5
+    },
+    "cache": {
+      "status": "healthy",
+      "latency_ms": 1
+    }
+  }
+}
+```
+
+#### Degraded Response (503 Service Unavailable)
+
+```json
+{
+  "status": "degraded",
+  "timestamp": "2025-01-15T10:30:00Z",
+  "checks": {
+    "database": {
+      "status": "unhealthy",
+      "error": "connection timeout"
+    },
+    "cache": {
+      "status": "healthy",
+      "latency_ms": 1
+    }
+  }
+}
+```
+
+---
+
+## Request/Response Conventions
+
+### HTTP Status Codes
+
+| Status Code | Usage |
+|-------------|-------|
+| 200 OK | Successful request |
+| 400 Bad Request | Invalid request parameters |
+| 404 Not Found | Resource not found |
+| 500 Internal Server Error | Unexpected server error |
+| 503 Service Unavailable | Service unavailable or unhealthy |
+
+### Request Headers
+
+| Header | Description |
+|--------|-------------|
+| `Content-Type` | Must be `application/json` for request bodies |
+| `Accept` | Should be `application/json` for JSON responses |
+| `User-Agent` | Optional client identifier |
+
+### Response Headers
+
+| Header | Description |
+|--------|-------------|
+| `Content-Type` | Always `application/json` |
+| `X-Request-ID` | Unique request identifier for debugging |
+| `X-Response-Time` | Server processing time in milliseconds |
+| `Cache-Control` | Cache directives (e.g., `max-age=30`) |
+
+### Date/Time Format
+
+All timestamps use ISO 8601 format in UTC:
+
+```
+2025-01-15T10:30:00Z
+```
+
+### Number Format
+
+- Numeric values use JSON number type
+- Floating point values may have up to 6 decimal places
+- Large integers are represented as strings to preserve precision
+
+---
+
+## Error Handling
+
+### Error Response Structure
+
+All error responses follow this structure:
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "timestamp": "2025-01-15T10:30:00Z",
+    "details": {}
+  }
+}
+```
+
+### Error Codes
+
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| `INVALID_PARAMETER` | 400 | Request parameter validation failed |
+| `DEVICE_NOT_FOUND` | 404 | No readings found for device |
+| `INTERNAL_ERROR` | 500 | Unexpected server error |
+| `DATABASE_UNAVAILABLE` | 503 | Database connection failed |
+| `CACHE_UNAVAILABLE` | 503 | Cache connection failed |
+
+### Validation Rules
+
+#### device_id
+
+- **Type:** String
+- **Required:** Yes
+- **Format:** Alphanumeric with hyphens and underscores
+- **Length:** 1-50 characters
+- **Pattern:** `^[a-zA-Z0-9_-]+$`
+
+#### limit
+
+- **Type:** Integer
+- **Required:** No
+- **Default:** 10
+- **Range:** 1-500
+- **Example:** `limit=50`
+
+#### reading_type
+
+- **Type:** String
+- **Required:** No
+- **Format:** Alphanumeric
+- **Length:** 1-30 characters
+- **Common values:** `temperature`, `humidity`, `pressure`, `voltage`
+
+---
+
+## Rate Limiting
+
+> **Note:** Rate limiting is implemented at the Nginx reverse proxy layer.
+
+### Rate Limits
+
+| Client | Rate Limit |
+|--------|------------|
+| Unauthenticated | 10 requests/second |
+| Authenticated (future) | 100 requests/second |
+
+### Rate Limit Headers
+
+Rate limit information is returned in response headers:
+
+```
+X-RateLimit-Limit: 10
+X-RateLimit-Remaining: 7
+X-RateLimit-Reset: 1705300200
+```
+
+### Rate Limit Exceeded
+
+When rate limit is exceeded, returns 429 Too Many Requests:
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Rate limit exceeded. Try again in 1 second.",
+    "timestamp": "2025-01-15T10:30:00Z",
+    "details": {
+      "retry_after": 1
+    }
+  }
+}
+```
+
+---
+
+## Pagination
+
+> **Note:** For the primary query pattern (get last N readings), offset-based pagination is not used because new readings are constantly being added. Instead, use timestamp-based pagination for traversing historical data.
+
+### Timestamp-Based Pagination (Future Enhancement)
+
+For fetching readings older than a certain timestamp:
+
+```
+GET /api/v1/sensor-readings?device_id=sensor-001&limit=10&before=2025-01-15T10:00:00Z
+```
+
+This would return the 10 readings immediately before the specified timestamp.
+
+---
+
+## Caching Behavior
+
+### Cache-Control Headers
+
+The API includes cache headers to inform client caching:
+
+```
+Cache-Control: public, max-age=30
+```
+
+- `public` — Response may be cached by any cache
+- `max-age=30` — Cache for 30 seconds
+
+### ETag Support (Future Enhancement)
+
+For conditional requests, the API may return an ETag:
+
+```
+ETag: "33a64df551425fcc55e4d42a148795d9f25f89d4"
+```
+
+Clients can use `If-None-Match` for conditional requests:
+
+```
+If-None-Match: "33a64df551425fcc55e4d42a148795d9f25f89d4"
+```
+
+Returns `304 Not Modified` if data hasn't changed.
+
+---
+
+## OpenAPI/Swagger Specification
+
+For integration with API documentation tools, here's the OpenAPI 3.0 specification:
+
+```yaml
+openapi: 3.0.0
+info:
+  title: IoT Sensor Query API
+  version: 1.0.0
+  description: High-performance API for querying IoT sensor telemetry
+
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Development server
+
+paths:
+  /sensor-readings:
+    get:
+      summary: Get sensor readings
+      operationId: getSensorReadings
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 10
+        - name: reading_type
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SensorReading'
+                  meta:
+                    $ref: '#/components/schemas/ResponseMetadata'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Device not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+components:
+  schemas:
+    SensorReading:
+      type: object
+      properties:
+        id:
+          type: string
+        device_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        reading_type:
+          type: string
+        value:
+          type: number
+        unit:
+          type: string
+        metadata:
+          type: object
+          nullable: true
+
+    ResponseMetadata:
+      type: object
+      properties:
+        count:
+          type: integer
+        limit:
+          type: integer
+        device_id:
+          type: string
+        reading_type:
+          type: string
+          nullable: true
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+```
+
+---
+
+## Related Documentation
+
+- [architecture.md](architecture.md) — System architecture and caching strategy
+- [stack.md](stack.md) — Technology stack and API framework details
+- [testing.md](testing.md) — Load testing methodology for API validation
