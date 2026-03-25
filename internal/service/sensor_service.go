@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/kelanach/higth/internal/cache"
@@ -77,7 +76,10 @@ func (s *SensorService) GetSensorReadings(ctx context.Context, deviceID string, 
 		return nil, fmt.Errorf("failed to query sensor readings: %w", err)
 	}
 
-	// Empty result is valid - return empty list instead of error
+	// Empty result for valid device_id means device not found
+	if len(readings) == 0 {
+		return nil, fmt.Errorf("%w: no readings found for device_id: %s", ErrDeviceNotFound, deviceID)
+	}
 
 	// Populate cache (fire and forget - don't fail if cache is down)
 	if s.cache != nil && s.cache.IsEnabled() {
@@ -105,14 +107,18 @@ func (s *SensorService) isValidDeviceID(deviceID string) bool {
 }
 
 // isValidReadingType checks if the reading type is valid.
+// Valid reading types are alphanumeric strings 1-30 characters.
 func (s *SensorService) isValidReadingType(readingType string) bool {
-	validTypes := []string{"temperature", "humidity", "pressure"}
-	for _, t := range validTypes {
-		if strings.EqualFold(readingType, t) {
-			return true
+	if len(readingType) == 0 || len(readingType) > 30 {
+		return false
+	}
+	// Check if alphanumeric only
+	for _, r := range readingType {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // cacheKey generates a consistent cache key for sensor readings.
@@ -124,23 +130,10 @@ func (s *SensorService) cacheKey(deviceID string, limit int, readingType string)
 	return fmt.Sprintf("sensor:%s:readings:%d", deviceID, limit)
 }
 
-// GetStats returns database statistics.
+// GetStats returns database statistics from the materialized view.
+// This is much faster than COUNT queries on the base table for large datasets.
 func (s *SensorService) GetStats(ctx context.Context) (map[string]interface{}, error) {
-	rowCount, err := s.repo.GetRowCount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get row count: %w", err)
-	}
-
-	deviceCount, err := s.repo.GetDeviceCount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device count: %w", err)
-	}
-
-	return map[string]interface{}{
-		"total_readings": rowCount,
-		"total_devices":  deviceCount,
-		"queried_at":     time.Now().Format(time.RFC3339),
-	}, nil
+	return s.repo.GetStatsFromMV(ctx)
 }
 
 // Ping checks if the service dependencies are healthy.
@@ -163,6 +156,38 @@ func (s *SensorService) Ping(ctx context.Context) map[string]error {
 		}
 	} else {
 		results["cache"] = nil // Cache disabled, not an error
+	}
+
+	return results
+}
+
+// PingResult represents the result of a health check with latency.
+type PingResult struct {
+	Error     error
+	LatencyMs int64
+}
+
+// PingWithLatency checks dependencies and returns results with timing.
+func (s *SensorService) PingWithLatency(ctx context.Context) map[string]PingResult {
+	results := make(map[string]PingResult)
+
+	// Check database with timing
+	start := time.Now()
+	dbErr := s.repo.Ping(ctx)
+	results["database"] = PingResult{
+		Error:     dbErr,
+		LatencyMs: time.Since(start).Milliseconds(),
+	}
+
+	// Check cache with timing
+	start = time.Now()
+	var cacheErr error
+	if s.cache != nil && s.cache.IsEnabled() {
+		cacheErr = s.cache.Ping(ctx)
+	}
+	results["cache"] = PingResult{
+		Error:     cacheErr,
+		LatencyMs: time.Since(start).Milliseconds(),
 	}
 
 	return results

@@ -3,6 +3,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -24,39 +25,53 @@ func NewHealthHandler(service *service.SensorService) *HealthHandler {
 //
 // It returns the health status of the service and its dependencies.
 // The overall status is:
-//   - "passing": All dependencies are healthy
-//   - "degraded": At least one dependency is unhealthy but the service can still function
-//   - "failing": The service cannot function
+//   - "healthy": All dependencies are healthy
+//   - "degraded": Cache is unhealthy but service can still function
+//   - "unhealthy": Database is unhealthy, service cannot function
 func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Ping all dependencies
-	results := h.service.Ping(r.Context())
+	// Ping all dependencies with timing
+	results := h.service.PingWithLatency(r.Context())
 
 	// Build response
 	checks := make(map[string]model.HealthCheck)
-	overallStatus := model.HealthStatusPassing
+	overallStatus := model.HealthStatusHealthy
 
-	for name, err := range results {
-		check := model.HealthCheck{Status: "passing"}
-		if err != nil {
-			check.Status = "failing"
-			check.Error = err.Error()
+	for name, result := range results {
+		check := model.HealthCheck{
+			Status:    "healthy",
+			LatencyMs: result.LatencyMs,
+		}
+		if result.Error != nil {
+			check.Status = "unhealthy"
+			check.Error = result.Error.Error()
 			overallStatus = model.HealthStatusDegraded
 		}
 		checks[name] = check
 	}
 
-	// If database is failing, the overall status is "failing"
-	if checks["database"].Status == "failing" {
-		overallStatus = model.HealthStatusFailing
+	// If database is unhealthy, mark overall as unhealthy (not just degraded)
+	if checks["database"].Status == "unhealthy" {
+		overallStatus = model.HealthStatusUnhealthy
 	}
 
 	response := model.NewHealthStatus(overallStatus, checks)
 
+	// Set HTTP status code based on overall health
+	var httpStatus int
+	switch overallStatus {
+	case model.HealthStatusHealthy:
+		httpStatus = http.StatusOK
+	case model.HealthStatusDegraded:
+		httpStatus = http.StatusServiceUnavailable
+	case model.HealthStatusUnhealthy:
+		httpStatus = http.StatusServiceUnavailable
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Response-Time", string(rune(time.Since(start).Milliseconds())))
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("X-Response-Time", fmt.Sprintf("%d", time.Since(start).Milliseconds()))
+	w.WriteHeader(httpStatus)
 	json.NewEncoder(w).Encode(response)
 }
 

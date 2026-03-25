@@ -231,7 +231,10 @@ The API will start on `http://localhost:8080`
 curl http://localhost:8080/health
 
 # Expected response:
-# {"status":"healthy","database":"connected","cache":"connected"}
+# {"status":"healthy","timestamp":"2026-03-19T09:06:26Z","checks":{"cache":{"status":"healthy","latency_ms":1},"database":{"status":"healthy","latency_ms":2}}}
+
+# Test sensor readings endpoint (requires device_id)
+curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=5"
 
 # View all services
 docker-compose ps
@@ -365,14 +368,47 @@ go run cmd/api/main.go
 ```bash
 GET /health
 ```
-**Response:**
+
+**Response (Healthy):**
 ```json
 {
   "status": "healthy",
-  "database": "connected",
-  "cache": "connected"
+  "timestamp": "2026-03-19T09:06:26Z",
+  "checks": {
+    "cache": {
+      "status": "healthy",
+      "latency_ms": 1
+    },
+    "database": {
+      "status": "healthy",
+      "latency_ms": 2
+    }
+  }
 }
 ```
+
+**Response (Degraded - cache unhealthy):**
+```json
+{
+  "status": "degraded",
+  "timestamp": "2026-03-19T09:06:26Z",
+  "checks": {
+    "cache": {
+      "status": "unhealthy",
+      "error": "connection refused",
+      "latency_ms": 0
+    },
+    "database": {
+      "status": "healthy",
+      "latency_ms": 2
+    }
+  }
+}
+```
+
+**HTTP Status Codes:**
+- `200 OK` - All dependencies healthy
+- `503 Service Unavailable` - One or more dependencies unhealthy
 
 #### 2. Query Sensor Readings
 ```bash
@@ -380,11 +416,9 @@ GET /api/v1/sensor-readings?device_id={id}&limit={n}&reading_type={type}
 ```
 
 **Parameters:**
-- `device_id` (required): Device identifier (e.g., `sensor-000001`)
-- `limit` (optional): Max results (default: 100, max: 10000)
-- `reading_type` (optional): Filter by type (`temperature`, `humidity`, `pressure`)
-- `start_time` (optional): ISO 8601 timestamp
-- `end_time` (optional): ISO 8601 timestamp
+- `device_id` (**required**): Device identifier (e.g., `sensor-000001`) - returns 400 if missing
+- `limit` (optional): Number of results (1-500, default: 10)
+- `reading_type` (optional): Filter by type (alphanumeric, 1-30 characters)
 
 **Example:**
 ```bash
@@ -394,16 +428,34 @@ curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit
 **Response:**
 ```json
 {
-  "device_id": "sensor-000001",
-  "readings": [
+  "data": [
     {
-      "timestamp": "2026-03-15T10:30:00Z",
+      "id": "12345678",
+      "device_id": "sensor-000001",
+      "timestamp": "2026-03-19T08:19:17Z",
       "reading_type": "temperature",
-      "value": 23.5,
-      "unit": "celsius"
+      "value": 34.63,
+      "unit": "°C"
     }
   ],
-  "count": 10
+  "meta": {
+    "count": 1,
+    "limit": 10,
+    "device_id": "sensor-000001",
+    "reading_type": "temperature"
+  }
+}
+```
+
+**Error Response (device not found):**
+```json
+{
+  "error": {
+    "code": "DEVICE_NOT_FOUND",
+    "message": "device not found: no readings found for device_id: nonexistent",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "abc123"
+  }
 }
 ```
 
@@ -441,6 +493,88 @@ curl "http://localhost:8080/api/v1/stats?reading_type=temperature&period=day"
 GET /metrics
 ```
 Returns Prometheus-format metrics for monitoring.
+
+---
+
+### Error Responses
+
+All error responses follow this format:
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "timestamp": "2026-03-19T09:01:47Z",
+    "request_id": "unique-request-id"
+  }
+}
+```
+
+**Common Error Codes:**
+
+| Error Code | HTTP Status | Example |
+|------------|-------------|---------|
+| `INVALID_PARAMETER` | 400 | Missing required parameter or invalid value |
+| `DEVICE_NOT_FOUND` | 404 | No readings found for the specified device |
+| `INTERNAL_ERROR` | 500 | Unexpected server error |
+
+**Validation Error Example (with details):**
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "limit must be between 1 and 500",
+    "timestamp": "2026-03-19T09:01:47Z",
+    "request_id": "692f0f0b8b63/7EGnsijONu-000003",
+    "details": {
+      "parameter": "limit",
+      "provided": "600",
+      "constraints": {
+        "min": 1,
+        "max": 500
+      }
+    }
+  }
+}
+```
+
+---
+
+### Response Headers
+
+All API responses include the following headers:
+
+| Header | Description | Example |
+|--------|-------------|---------|
+| `Content-Type` | Response format | `application/json` |
+| `X-Request-ID` | Unique request identifier for debugging | `692f0f0b8b63/7EGnsijONu-000003` |
+| `X-Response-Time` | Server processing time in milliseconds | `3` |
+| `Cache-Control` | Cache directives for client caching | `public, max-age=30` |
+
+**Example:**
+```bash
+curl -i "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000000&limit=2"
+
+# Response headers:
+# HTTP/1.1 200 OK
+# Cache-Control: public, max-age=30
+# Content-Type: application/json
+# X-Request-Id: 692f0f0b8b63/7EGnsijONu-000006
+# X-Response-Time: 3
+```
+
+---
+
+### Validation Rules
+
+| Parameter | Type | Required | Default | Valid Values | Error on Invalid |
+|-----------|------|----------|---------|--------------|------------------|
+| `device_id` | string | **Yes** | - | Alphanumeric with hyphens/underscores, 1-50 chars | 400 INVALID_PARAMETER |
+| `limit` | integer | No | 10 | 1-500 | 400 INVALID_PARAMETER |
+| `reading_type` | string | No | - | Alphanumeric, 1-30 characters | 400 INVALID_PARAMETER |
+
+---
 
 ### Database Schema
 
@@ -837,12 +971,19 @@ docker exec highth-redis redis-cli KEYS "*"
 
 ### API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/api/v1/sensor-readings` | GET | Query sensor readings |
-| `/api/v1/stats` | GET | Get statistics |
-| `/metrics` | GET | Prometheus metrics |
+| Endpoint | Method | Description | Key Parameters |
+|----------|--------|-------------|------------------|
+| `/health` | GET | Health check with dependency status and latency | - |
+| `/health/ready` | GET | Readiness probe | - |
+| `/health/live` | GET | Liveness probe | - |
+| `/api/v1/sensor-readings` | GET | Query sensor readings for a device | `device_id` (required), `limit` (1-500), `reading_type` |
+| `/api/v1/stats` | GET | Get database statistics | - |
+| `/metrics` | GET | Prometheus metrics | - |
+
+**Notes:**
+- `device_id` is **required** for `/api/v1/sensor-readings` - returns 400 if missing
+- Returns 404 `DEVICE_NOT_FOUND` if device has no readings (not empty array with 200)
+- All responses include `X-Request-ID`, `X-Response-Time`, and `Cache-Control` headers
 
 ---
 

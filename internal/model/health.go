@@ -13,7 +13,7 @@ type HealthStatus struct {
 // HealthCheck represents a single health check result.
 type HealthCheck struct {
 	Status    string `json:"status"`
-	LatencyMs int64  `json:"latency_ms,omitempty"`
+	LatencyMs int64  `json:"latency_ms"`
 	Error     string `json:"error,omitempty"`
 }
 
@@ -21,12 +21,12 @@ type HealthCheck struct {
 type HealthStatusValues string
 
 const (
-	// HealthStatusPassing represents a healthy system
-	HealthStatusPassing HealthStatusValues = "passing"
+	// HealthStatusHealthy represents a fully healthy system
+	HealthStatusHealthy HealthStatusValues = "healthy"
 	// HealthStatusDegraded represents a partially functional system
 	HealthStatusDegraded HealthStatusValues = "degraded"
-	// HealthStatusFailing represents an unhealthy system
-	HealthStatusFailing HealthStatusValues = "failing"
+	// HealthStatusUnhealthy represents an unhealthy system
+	HealthStatusUnhealthy HealthStatusValues = "unhealthy"
 )
 
 // NewHealthStatus creates a new HealthStatus with the given checks.
