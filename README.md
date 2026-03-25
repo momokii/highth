@@ -197,30 +197,21 @@ docker-compose up -d
 # 3. Wait for services to be healthy (30 seconds)
 docker-compose ps
 
-# 4. Initialize database
-# Step 1: Run base schema initialization (creates tables and basic indexes)
-docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/001_init_schema.sql
+# 4. Run database migrations (automated)
+./scripts/run_migrations.sh
 
-# Step 2: Generate test data (1,000 rows for quick start)
+# 5. Generate test data (1,000 rows for quick start)
 ./scripts/generate_data_fast.py 1000 --devices 10 --days 1
 
-# Step 3: Create performance indexes
-docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
+# 6. Re-run migrations to create performance indexes and materialized views
+./scripts/run_migrations.sh
 
-# Step 4: Create materialized views
-docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
-
-# 5. Test the API
+# 7. Test the API
 curl http://localhost:8080/health
 curl "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000001&limit=10"
 ```
 
-**IMPORTANT:** Run the database migrations in this exact order:
-1. `001_init_schema.sql` - Creates the base table
-2. Generate data - Populates the table with test data
-3. `002_advanced_indexes.sql` - Creates performance indexes (requires data)
-4. `004_materialized_views.sql` - Creates analytics views (requires data)
-
+**IMPORTANT:** The migration runner automatically tracks and applies pending migrations. See [Database Migrations](#database-migrations) below for details.
 
 The API will start on `http://localhost:8080`
 
@@ -243,6 +234,175 @@ docker-compose ps
 ```
 
 ---
+
+
+## Database Migrations
+
+The Higth project uses an automated migration system to track and apply database schema changes. This ensures your database stays in sync with the application code.
+
+### Running Migrations
+
+**One command to run all pending migrations:**
+
+```bash
+./scripts/run_migrations.sh
+```
+
+**Available options:**
+
+```bash
+./scripts/run_migrations.sh           # Run all pending migrations
+./scripts/run_migrations.sh --dry-run # Preview what would be applied
+./scripts/run_migrations.sh --verbose # Show detailed output
+./scripts/run_migrations.sh --force   # Force re-run of migrations (use with caution)
+```
+
+**What the migration runner does:**
+
+1. ✅ Checks database connection
+2. ✅ Creates `schema_migrations` tracking table (if needed)
+3. ✅ Detects existing migrations (001, 002, 004, 005) and backfills them
+4. ✅ Runs unapplied migrations in order
+5. ✅ Tracks applied migrations with checksums
+6. ✅ Provides clear, colored output
+
+### Migration Reference
+
+| Migration | Version | Description | Status |
+|-----------|---------|-------------|--------|
+| Base Schema | 001 | Creates `sensor_readings` table with basic indexes | ✅ Applied |
+| Advanced Indexes | 002 | Creates BRIN and composite indexes for performance | ✅ Applied |
+| Materialized Views | 004 | Creates `mv_device_hourly_stats`, `mv_device_daily_stats`, `mv_global_stats` | ✅ Applied |
+| Incremental MV Refresh | 005 | Creates `refresh_*_incremental()` functions for fast MV refresh | ✅ Applied |
+
+### Creating New Migrations
+
+**Naming convention:**
+
+```
+NNN_description.sql
+```
+
+- `NNN` - Zero-padded 3-digit number (006, 007, etc.)
+- `description` - Snake_case short description
+
+**Examples:**
+- `006_add_api_rate_limits.sql`
+- `007_create_user_accounts.sql`
+- `008_add_audit_log_table.sql`
+
+**Steps to create a migration:**
+
+1. **Create the migration file:**
+
+```bash
+# In scripts/schema/migrations/
+touch 006_your_migration_name.sql
+```
+
+2. **Write idempotent SQL (can run multiple times safely):**
+
+```sql
+-- Migration 006: Add API rate limits
+--
+-- Adds rate limiting functionality to the API
+
+BEGIN;
+
+-- Create table with IF NOT EXISTS
+CREATE TABLE IF NOT EXISTS rate_limits (
+    api_key VARCHAR(255) PRIMARY KEY,
+    requests_per_minute INT NOT NULL DEFAULT 60,
+    window_start TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes with IF NOT EXISTS
+CREATE INDEX IF NOT EXISTS idx_rate_limits_api_key ON rate_limits(api_key);
+
+COMMENT ON TABLE rate_limits IS 'API rate limiting configuration';
+
+COMMIT;
+```
+
+3. **Run the migration:**
+
+```bash
+./scripts/run_migrations.sh
+```
+
+**Best practices for migrations:**
+
+- ✅ Use `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`
+- ✅ Wrap changes in transactions (`BEGIN`/`COMMIT`)
+- ✅ Add comments explaining the migration purpose
+- ✅ Test migrations on a copy of production data first
+- ✅ Never modify or delete migration files that have been applied
+- ✅ Keep migrations focused (one logical change per file)
+
+### Migration Tracking
+
+The `schema_migrations` table tracks applied migrations:
+
+```sql
+SELECT version, name, applied_at, execution_time_ms
+FROM schema_migrations
+ORDER BY version;
+```
+
+**Columns:**
+- `version` - Migration number (001, 002, etc.)
+- `name` - Migration name (from filename)
+- `applied_at` - When the migration was applied
+- `execution_time_ms` - How long the migration took to run
+- `checksum` - SHA256 checksum of the migration file
+
+### Troubleshooting
+
+**Migration runner fails with "Database connection failed":**
+
+```bash
+# Check if PostgreSQL is running
+docker ps | grep highth-postgres
+
+# Restart if needed
+docker-compose restart postgres
+```
+
+**Migration runner says "Already applied" but migration is missing:**
+
+```bash
+# Force re-run (use with caution!)
+./scripts/run_migrations.sh --force
+```
+
+**Need to re-run a specific migration:**
+
+```bash
+# 1. Check which migrations are applied
+docker exec highth-postgres psql -U sensor_user -d sensor_db \
+  -c "SELECT version, name FROM schema_migrations ORDER BY version;"
+
+# 2. Remove the migration record
+docker exec highth-postgres psql -U sensor_user -d sensor_db \
+  -c "DELETE FROM schema_migrations WHERE version = '006';"
+
+# 3. Re-run migrations
+./scripts/run_migrations.sh
+```
+
+**View all migrations in database:**
+
+```bash
+# View schema_migrations table
+docker exec highth-postgres psql -U sensor_user -d sensor_db \
+  -c "SELECT * FROM schema_migrations ORDER BY version;"
+
+# View all tables
+docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dt"
+
+# View all materialized views
+docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dmv"
+```
 
 ## Detailed Setup Guide
 
@@ -324,6 +484,7 @@ go run cmd/api/main.go
 ---
 
 ## Understanding the System
+- [Database Migrations](#database-migrations)
 
 ### Architecture Overview
 
