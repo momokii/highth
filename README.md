@@ -470,11 +470,8 @@ docker-compose logs -f postgres
 **Step 3: Initialize Database**
 
 ```bash
-# Apply advanced indexes migration
-docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
-
-# Apply materialized views migration
-docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
+# Run migrations to create all database schema and optimizations
+./scripts/run_migrations.sh
 
 # Verify tables created
 docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dt"
@@ -496,20 +493,17 @@ docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dmv"
 # 1. Start PostgreSQL and Redis locally
 # (Use your preferred method: brew, apt, systemctl, etc.)
 
-# 2. Create database
-createdb sensor_db
+# 2. Run migrations to create database schema and optimizations
+#    (Database will be created automatically by PostgreSQL)
+./scripts/run_migrations.sh
 
-# 3. Run schema initialization
-psql -U $USER -d sensor_db < scripts/schema/migrations/002_advanced_indexes.sql
-psql -U $USER -d sensor_db < scripts/schema/migrations/004_materialized_views.sql
-
-# 4. Configure environment variables
+# 3. Configure environment variables
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
 export REDIS_HOST=localhost
 export REDIS_PORT=6379
 
-# 5. Run API
+# 4. Run API
 go run cmd/api/main.go
 ```
 
@@ -1327,8 +1321,8 @@ crontab -l | grep refresh_materialized_views
 # Check if incremental functions exist
 docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\df refresh_*"
 
-# Re-run migration 005 if needed
-docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/005_incremental_mv_refresh.sql
+# Re-run all migrations if needed
+./scripts/run_migrations.sh
 ```
 
 ---
