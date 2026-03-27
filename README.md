@@ -12,6 +12,8 @@
 - [Detailed Setup Guide](#detailed-setup-guide)
 - [Understanding the System](#understanding-the-system)
 - [Running Experiments](#running-experiments)
+- [Running Load Tests](#running-load-tests)
+- [Benchmark Testing](#benchmark-testing)
 - [Understanding Your Results](#understanding-your-results)
 - [Generating More Data](#generating-more-data)
 - [Reference Guide](#reference-guide)
@@ -57,14 +59,29 @@ highth/
 │   ├── schema/                 # Database schema & migrations
 │   │   ├── migrations/         # SQL migration files
 │   │   │   ├── 002_advanced_indexes.sql      # BRIN & covering indexes
-│   │   │   └── 004_materialized_views.sql   # Hourly/daily/global stats MVs
+│   │   │   ├── 004_materialized_views.sql   # Hourly/daily/global stats MVs
+│   │   │   └── 005_incremental_mv_refresh.sql # Incremental MV refresh functions
 │   │   └── (schema.sql)        # Initial schema (if needed)
 │   │
 │   ├── docker-compose.yml      # Docker services definition
 │   ├── generate_data.go        # Go data generator (slower)
 │   ├── generate_data_fast.py   # Python data generator (fast, uses COPY)
 │   ├── refresh_materialized_views.sh  # MV refresh automation
-│   └── test-runner.sh          # Load testing with Vegeta
+│   ├── run_migrations.sh       # Automated migration runner
+│   └── test-runner.sh          # Load testing with Vegeta (legacy)
+│
+├── tests/                      # k6 Benchmark tests
+│   ├── scenarios/              # Test scenario files
+│   │   ├── 01-hot-device-pattern.js       # Zipf distribution test
+│   │   ├── 02-time-range-queries.js       # Time-range query test
+│   │   ├── 03-mixed-workload.js           # Real API usage test
+│   │   └── 04-cache-performance.js        # Cache effectiveness test
+│   ├── lib/                    # Test libraries
+│   │   ├── config.js           # Test configuration
+│   │   ├── endpoints.js        # API endpoint wrappers
+│   │   └── helpers.js          # Utility functions
+│   ├── k6.config.js            # k6 configuration
+│   └── run-benchmarks.sh       # Main test runner script
 │
 ├── docs/                       # Documentation
 │   ├── implementation/         # Implementation guides
@@ -1027,6 +1044,251 @@ vegeta report --type=json test-results/20260317_110226/concurrent.txt > metrics.
 - p50 > 100 ms → Check database indexes
 - p95 > 500 ms → Check query plans, caching
 - Error rate > 1% → Check logs for failures
+
+---
+
+## Benchmark Testing
+
+The Higth project includes a **comprehensive benchmark testing suite** powered by [k6](https://k6.io/), a modern load testing tool designed for developer-friendly performance testing.
+
+### Why Benchmark Testing?
+
+This benchmark system validates that the API + database can handle:
+
+- **High data volume**: 83M+ rows in the database
+- **High traffic**: Concurrent requests under sustained load
+- **Low latency**: Average/median response time < 500ms
+
+### Quick Start
+
+**One command to run all benchmarks:**
+
+```bash
+./tests/run-benchmarks.sh
+```
+
+**Run specific benchmark scenarios:**
+
+```bash
+./tests/run-benchmarks.sh --scenario hot          # Hot device pattern
+./tests/run-benchmarks.sh --scenario time-range   # Time-range queries
+./tests/run-benchmarks.sh --scenario mixed        # Mixed workload
+./tests/run-benchmarks.sh --scenario cache        # Cache performance
+```
+
+**List all available scenarios:**
+
+```bash
+./tests/run-benchmarks.sh --list
+```
+
+### Benchmark Scenarios
+
+The test suite includes **4 comprehensive scenarios** that simulate real-world IoT traffic patterns:
+
+| Scenario | Purpose | Duration | Target |
+|----------|---------|----------|--------|
+| **Hot Device Pattern** | Zipf distribution (20% devices get 80% traffic) | 3 min | p95 < 500ms |
+| **Time-Range Queries** | Dashboard-style queries (1h/24h/7d) | 2 min | p95 < 500ms |
+| **Mixed Workload** ⭐ | **PRIMARY TEST** - Real API usage mix | 2.5 min | p95 < 400ms |
+| **Cache Performance** | Cold → Warm → Hot cache phases | 3 min | Hot: p95 < 100ms |
+
+### Scenario Details
+
+#### 1. Hot Device Pattern
+
+**Tests:** Zipf distribution (realistic IoT traffic)
+- 80% of requests go to top 20% of devices
+- Validates caching effectiveness under uneven load
+- Tests connection pool behavior
+
+**Success Criteria:**
+- p50 < 300ms
+- p95 < 500ms
+- p99 < 800ms
+- Error rate < 1%
+
+#### 2. Time-Range Queries
+
+**Tests:** Dashboard-style queries with varying time ranges
+- Last hour (frequent, small dataset)
+- Last 24 hours (medium dataset)
+- Last 7 days (large dataset, tests materialized views)
+- Varying limits (10, 50, 100, 500 records)
+
+**Success Criteria:**
+- p50 < 200ms
+- p95 < 500ms
+- p99 < 800ms
+
+#### 3. Mixed Workload ⭐
+
+**Tests:** Real-world API usage patterns
+- 10% health checks (lightweight)
+- 20% stats queries (moderate, uses materialized views)
+- 70% sensor readings (heavy, main workload)
+- Ramp-up: 25 → 50 → 100 RPS
+
+**Success Criteria:**
+- p50 < 150ms
+- p95 < 400ms
+- p99 < 600ms
+
+#### 4. Cache Performance
+
+**Tests:** Redis cache effectiveness across three phases:
+- Phase 1: Cold cache (all database hits)
+- Phase 2: Warm cache (populating, mixed hits/misses)
+- Phase 3: Hot cache (high hit rate)
+
+**Success Criteria:**
+- Phase 1 p95 < 600ms (cold baseline)
+- Phase 2 p95 < 300ms (warming up)
+- Phase 3 p95 < 100ms (warm cache, very fast!)
+- Cache hit rate > 80% in Phase 3
+
+### Understanding Benchmark Results
+
+**Console Output:**
+
+```
+╔════════════════════════════════════════════════════════════════╗
+║              Higth IoT Benchmark Suite v2.0                      ║
+╚════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Scenario 1: Hot Device Pattern
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✓ Scenario 'hot_device_pattern' completed
+
+Results:
+  p50:   45ms  ✓ (target: <300ms)
+  p95:   234ms  ✓ (target: <500ms)
+  p99:   412ms  ✓ (target: <800ms)
+  RPS:   52.3
+  Errors: 0.0%
+
+[SUCCESS] Scenario 'hot' completed
+```
+
+**HTML Reports:**
+
+Benchmark results are saved to `test-results/` with timestamped files:
+- JSON summary: `summary_TIMESTAMP.json`
+- Individual scenario results: `scenario_name_TIMESTAMP.json`
+- HTML reports: Available if [k6-to-html](https://github.com/k6io/html-reporter) is installed
+
+**Install k6-to-html for beautiful reports:**
+
+```bash
+npm install -g k6-to-html
+```
+
+### Advanced Usage
+
+**Custom requests per second:**
+
+```bash
+./tests/run-benchmarks.sh --rps 100
+```
+
+**Custom test duration:**
+
+```bash
+./tests/run-benchmarks.sh --duration 5m
+```
+
+**Test remote API:**
+
+```bash
+./tests/run-benchmarks.sh --target-url https://api.example.com
+```
+
+**Verbose output:**
+
+```bash
+./tests/run-benchmarks.sh --verbose
+```
+
+### Performance Targets
+
+**Primary Goal:** Validate the system can handle 83M+ rows with <500ms latency
+
+| Metric | Target | Why |
+|--------|--------|-----|
+| p50 (median) | < 300ms | 50% of requests should be fast |
+| p95 | < 500ms | **Primary target** - 95% of requests |
+| p99 | < 800ms | 99% of requests (allow some outliers |
+| Error rate | < 1% | System reliability |
+
+**Excellent Performance** (exceeds targets):
+- p50 < 100ms ✅
+- p95 < 300ms ✅
+- Error rate = 0% ✅
+
+**Needs Investigation**:
+- p50 > 300ms → Check database indexes and caching
+- p95 > 500ms → Check query plans and materialized view refresh
+- p99 > 800ms → Check for slow queries or connection pool exhaustion
+- Error rate > 1% → Check logs for failures
+
+### Docker-Based Testing
+
+The benchmark system uses Docker for isolated, reproducible testing:
+
+```bash
+# Start test environment
+docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d k6
+
+# Run tests manually inside container
+docker exec -it highth-k6 sh
+k6 run /tests/scenarios/01-hot-device-pattern.js
+```
+
+### Troubleshooting Benchmarks
+
+**"API is not responding" error:**
+
+```bash
+# Check if services are running
+docker-compose ps
+
+# Start services if needed
+docker-compose up -d
+
+# Verify API health
+curl http://localhost:8080/health
+```
+
+**"Database connection failed" error:**
+
+```bash
+# Check PostgreSQL is running
+docker ps | grep postgres
+
+# Restart if needed
+docker-compose restart postgres
+```
+
+**High latency (> 500ms) in results:**
+
+1. Check database indexes are applied:
+   ```bash
+   docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\di"
+   ```
+
+2. Verify materialized views are refreshed:
+   ```bash
+   ./scripts/refresh_materialized_views.sh --status
+   ```
+
+3. Check Redis cache is working:
+   ```bash
+   docker exec highth-redis redis-cli INFO stats
+   ```
+
+---
 
 ## Understanding Your Results
 

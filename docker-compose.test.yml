@@ -1,0 +1,57 @@
+# Docker Compose for Benchmark Testing
+#
+# This compose file extends the main docker-compose.yml with test-specific services.
+# It provides an isolated k6 testing environment with proper networking and volumes.
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.test.yml up -d k6
+#   docker-compose -f docker-compose.yml -f docker-compose.test.yml run --rm k6
+#
+# Or simply use the test runner:
+#   ./tests/run-benchmarks.sh
+#
+# Author: Higth Testing Team
+# Version: 1.0.0
+# Date: 2026-03-25
+
+version: '3.8'
+
+services:
+  k6:
+    image: grafana/k6:latest
+    container_name: highth-k6
+    profiles:
+      - test
+    volumes:
+      # Mount test files
+      - ./tests:/tests
+      # Mount test results
+      - ./test-results:/results
+    environment:
+      # API endpoint to test
+      - TARGET_URL=http://api:8080
+      # k6 output format (HTML report)
+      - K6_OUT=html=results/report.html
+      # k6 options
+      - K6_NO_USAGE_REPORT=true
+      - K6_SUMMARY_EXPORT=results/summary.json
+    depends_on:
+      api:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - higth_network
+    # Keep test container running for manual testing
+    stdin_open: true
+    tty: true
+
+volumes:
+  test-results:
+    driver: local
+
+networks:
+  higth_network:
+    external: true
