@@ -214,20 +214,86 @@ Unexpected server error.
 
 ---
 
-### Health Check
+### Get Statistics
 
-Check API health status (useful for load balancers and monitoring).
+Retrieve aggregate statistics from materialized views.
 
 #### Endpoint
 
 ```
-GET /health
+GET /api/v1/stats
+```
+
+#### Query Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `device_id` | string | No | - | Filter statistics for specific device |
+| `period` | string | No | hour | Aggregation period (hour, day, all) |
+
+#### Example Request
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/stats?period=hour"
+```
+
+#### Success Response (200 OK)
+
+```json
+{
+  "data": {
+    "device_hourly": [
+      {
+        "device_id": "sensor-001",
+        "reading_type": "temperature",
+        "hour": "2025-01-15T10:00:00Z",
+        "avg_value": 23.5,
+        "min_value": 20.1,
+        "max_value": 26.8,
+        "count": 60
+      }
+    ],
+    "device_daily": [],
+    "global": {
+      "total_readings": 50000000,
+      "total_devices": 1000,
+      "avg_reading_value": 45.2
+    }
+  },
+  "meta": {
+    "period": "hour",
+    "generated_at": "2025-01-15T10:30:00Z"
+  }
+}
+```
+
+#### Error Responses
+
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| `INVALID_PERIOD` | 400 | Period must be one of: hour, day, all |
+| `STATS_UNAVAILABLE` | 503 | Materialized views not refreshed |
+
+---
+
+### Health Check
+
+Check API health status (useful for load balancers and monitoring).
+
+#### Endpoints
+
+```
+GET /health           # Full health check with component status
+GET /health/ready     # Readiness probe (Kubernetes)
+GET /health/live      # Liveness probe (Kubernetes)
 ```
 
 #### Example Request
 
 ```bash
 curl -X GET "http://localhost:8080/health"
+curl -X GET "http://localhost:8080/health/ready"
+curl -X GET "http://localhost:8080/health/live"
 ```
 
 #### Success Response (200 OK)
@@ -249,6 +315,22 @@ curl -X GET "http://localhost:8080/health"
 }
 ```
 
+#### Readiness Probe Response (200 OK)
+
+```json
+{
+  "status": "ready"
+}
+```
+
+#### Liveness Probe Response (200 OK)
+
+```json
+{
+  "status": "alive"
+}
+```
+
 #### Degraded Response (503 Service Unavailable)
 
 ```json
@@ -267,6 +349,14 @@ curl -X GET "http://localhost:8080/health"
   }
 }
 ```
+
+#### Probe Behavior
+
+| Probe | Behavior | Use Case |
+|-------|----------|----------|
+| `/health` | Full check with details | Load balancer health checks, monitoring dashboards |
+| `/health/ready` | Checks if service can accept traffic | Kubernetes readiness probes, startup validation |
+| `/health/live` | Simple alive check | Kubernetes liveness probes, restart detection |
 
 ---
 

@@ -274,78 +274,124 @@ The project **fails gracefully** if:
 
 ---
 
-## Load Testing Tool: Vegeta
+## Load Testing Tool: k6
 
-### Why Vegeta?
+### Why k6?
 
-Vegeta was chosen for load testing because:
-- Go-native (fits our ecosystem)
-- Simple CLI interface
+k6 was chosen for load testing because:
+- Modern JavaScript-based testing (easy to write and maintain)
 - Built-in percentile metrics (p50, p95, p99)
-- Attack-based testing model (realistic)
-- Multiple output formats (text, JSON, histogram)
+- Realistic scenario-based testing model
+- Multiple output formats (text, JSON, HTML)
+- Docker integration for consistent testing
+- Active development and community support
+
+> **Note:** The original design specified Vegeta, but the implementation uses k6 for better scenario management and Docker integration.
 
 ### Installation
 
 ```bash
-# Go install
-go install github.com/tsenart/vegeta@latest
+# Using Docker (recommended)
+docker pull grafana/k6:latest
 
-# Or download binary
-wget https://github.com/tsenart/vegeta/releases/download/v12.11.0/vegeta_12.11.0_linux_amd64.tar.gz
-tar -xvf vegeta_12.11.0_linux_amd64.tar.gz
-sudo mv vegeta /usr/local/bin/
+# Or install directly
+sudo gpg -k \
+  https://dl.k6.io/rpm/repo.rpm.gpg \
+  | sudo tee /etc/yum.repos.d/k6.repo
+sudo yum install k6
+
+# Or on macOS
+brew install k6
+
+# Or using Go
+go install go.k6.io/k6@latest
 ```
 
 ### Basic Usage
 
 ```bash
-# Simple attack
-echo "GET http://localhost:8080/api/v1/sensor-readings?device_id=sensor-001&limit=10" | \
-  vegeta attack -duration=30s -rate=10 | \
-  vegeta report -type=text
+# Run the benchmark test suite
+./tests/run-benchmarks.sh
 
-# Save results for later analysis
-echo "GET http://localhost:8080/api/v1/sensor-readings?device_id=sensor-001&limit=10" | \
-  vegeta attack -duration=30s -rate=10 | \
-  tee results.bin | \
-  vegeta report -type=text
+# Run specific scenario
+./tests/run-benchmarks.sh --scenario hot
 
-# Generate histogram
-vegeta report -inputs=results.bin -type=hist[0,50ms,100ms,500ms,1s]
+# Custom RPS and duration
+./tests/run-benchmarks.sh --rps 100 --duration 5m
 
-# Generate JSON for programmatic analysis
-vegeta report -inputs=results.bin -type=json > metrics.json
+# Test remote API
+./tests/run-benchmarks.sh --target-url https://api.example.com
 ```
 
-### Advanced Usage
+### k6 Test Scenarios
+
+The test suite includes four scenarios:
+
+1. **Hot Device Pattern** (`01-hot-device-pattern.js`)
+   - Simulates Zipf distribution (20% devices get 80% queries)
+   - Tests cache effectiveness
+
+2. **Time Range Queries** (`02-time-range-queries.js`)
+   - Tests queries across different time ranges
+   - Validates BRIN index performance
+
+3. **Mixed Workload** (`03-mixed-workload.js`)
+   - Realistic mix of query patterns
+   - Tests system under normal load
+
+4. **Cache Performance** (`04-cache-performance.js`)
+   - Cold start vs warm cache
+   - Cache hit rate measurement
+
+### Creating Custom Tests
+
+```javascript
+// custom-test.js
+import http from 'k6/http';
+import { check } from 'k6';
+
+export let options = {
+  stages: [
+    { duration: '30s', target: 10 },   // Ramp up to 10 users
+    { duration: '1m', target: 50 },     // Ramp up to 50 users
+    { duration: '30s', target: 0 },     // Ramp down
+  ],
+  thresholds: {
+    http_req_duration: ['p(95)<500'],  // 95% of requests under 500ms
+    http_req_failed: ['rate<0.01'],     // Error rate < 1%
+  },
+};
+
+const BASE_URL = __ENV.TARGET_URL || 'http://localhost:8080';
+
+export default function () {
+  const deviceId = `sensor-${Math.floor(Math.random() * 1000)}`;
+  const response = http.get(
+    `${BASE_URL}/api/v1/sensor-readings?device_id=${deviceId}&limit=10`
+  );
+
+  check(response, {
+    'status is 200': (r) => r.status === 200,
+    'has data': (r) => JSON.parse(r.body).data.length > 0,
+  });
+}
+```
+
+### Running Custom Tests
 
 ```bash
-# Custom headers
-echo "GET http://localhost:8080/api/v1/sensor-readings" | \
-  vegeta attack -duration=30s -rate=10 \
-    -header="Authorization: Bearer token123" \
-    -header="X-API-Key: key456"
+# Run with Docker
+docker run --rm --network host \
+  -v $(pwd):/tests \
+  grafana/k6:latest run \
+  --env TARGET_URL=http://localhost:8080 \
+  /tests/custom-test.js
 
-# Max workers (concurrent connections)
-vegeta attack -duration=30s -rate=100 -max-workers=200
+# Run locally
+k6 run --env TARGET_URL=http://localhost:8080 custom-test.js
 
-# Attack from targets file
-cat targets.txt | vegeta attack -duration=60s -rate=50
-
-# Distributed testing (multiple instances)
-# On instance 1:
-echo "GET http://localhost:8080/api/v1/sensor-readings" | \
-  vegeta attack -duration=60s -rate=50 | \
-  tee results1.bin
-
-# On instance 2:
-echo "GET http://localhost:8080/api/v1/sensor-readings" | \
-  vegeta attack -duration=60s -rate=50 | \
-  tee results2.bin
-
-# Combine results:
-cat results1.bin results2.bin | vegeta report -type=text
+# With custom options
+k6 run --env RPS=100 --env DURATION=5m custom-test.js
 ```
 
 ---
@@ -498,121 +544,78 @@ Run tests in this order for consistent results:
 - [ ] Dataset is populated to target size
 - [ ] Indexes are created and analyzed
 - [ ] Connection pool is configured
-- [ ] Vegeta is installed
+- [ ] k6 is available (Docker or installed locally)
 
 ### Test Script
 
+**Use the provided benchmark runner:**
+
 ```bash
-#!/bin/bash
+# Run all scenarios
+./tests/run-benchmarks.sh
 
-# Test execution script
+# Run specific scenario
+./tests/run-benchmarks.sh --scenario hot
 
-API_BASE="http://localhost:8080"
-RESULTS_DIR="./test-results/$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$RESULTS_DIR"
+# Custom load and duration
+./tests/run-benchmarks.sh --rps 100 --duration 5m
 
-echo "Starting test run at $(date)" | tee "$RESULTS_DIR/test-run.log"
+# Test remote API
+./tests/run-benchmarks.sh --target-url https://api.example.com
+```
 
-# Health check
-echo "=== Health Check ===" | tee -a "$RESULTS_DIR/test-run.log"
-curl -s "$API_BASE/health" | tee "$RESULTS_DIR/health.json" | tee -a "$RESULTS_DIR/test-run.log"
-echo "" | tee -a "$RESULTS_DIR/test-run.log"
+**Or run k6 directly for custom tests:**
 
-# Cold start test
-echo "=== Cold Start Test ===" | tee -a "$RESULTS_DIR/test-run.log"
-redis-cli FLUSHALL
-echo "GET $API_BASE/api/v1/sensor-readings?device_id=sensor-{0..999}&limit=10" | \
-  vegeta attack -duration=60s -rate=20 -workers=20 | \
-  tee "$RESULTS_DIR/cold-start.bin" | \
-  vegeta report -type=text | tee "$RESULTS_DIR/cold-start.txt" | tee -a "$RESULTS_DIR/test-run.log"
+```bash
+# Run custom test
+k6 run custom-test.js
 
-# Baseline test
-echo "=== Baseline Test ===" | tee -a "$RESULTS_DIR/test-run.log"
-echo "GET $API_BASE/api/v1/sensor-readings?device_id=sensor-001&limit=10" | \
-  vegeta attack -duration=30s -rate=1 | \
-  tee "$RESULTS_DIR/baseline.bin" | \
-  vegeta report -type=text | tee "$RESULTS_DIR/baseline.txt" | tee -a "$RESULTS_DIR/test-run.log"
+# With environment variables
+k6 run --env TARGET_URL=http://localhost:8080 custom-test.js
 
-# Concurrent load test
-echo "=== Concurrent Load Test ===" | tee -a "$RESULTS_DIR/test-run.log"
-echo "GET $API_BASE/api/v1/sensor-readings?device_id=sensor-{0..999}&limit=10" | \
-  vegeta attack -duration=60s -rate=50 -workers=50 | \
-  tee "$RESULTS_DIR/concurrent.bin" | \
-  vegeta report -type=text | tee "$RESULTS_DIR/concurrent.txt" | tee -a "$RESULTS_DIR/test-run.log"
-
-# Hot device test
-echo "=== Hot Device Test ===" | tee -a "$RESULTS_DIR/test-run.log"
-for i in {1..90}; do
-  echo "GET $API_BASE/api/v1/sensor-readings?device_id=sensor-hot&limit=10"
-done > "$RESULTS_DIR/hot-targets.txt"
-for i in {1..10}; do
-  echo "GET $API_BASE/api/v1/sensor-readings?device_id=sensor-$((RANDOM % 1000))&limit=10"
-done >> "$RESULTS_DIR/hot-targets.txt"
-cat "$RESULTS_DIR/hot-targets.txt" | \
-  vegeta attack -duration=60s -rate=10 -workers=10 | \
-  tee "$RESULTS_DIR/hot-device.bin" | \
-  vegeta report -type=text | tee "$RESULTS_DIR/hot-device.txt" | tee -a "$RESULTS_DIR/test-run.log"
-
-# Large N test
-echo "=== Large N Test ===" | tee -a "$RESULTS_DIR/test-run.log"
-echo "GET $API_BASE/api/v1/sensor-readings?device_id=sensor-001&limit=500" | \
-  vegeta attack -duration=30s -rate=10 -workers=10 | \
-  tee "$RESULTS_DIR/large-n.bin" | \
-  vegeta report -type=text | tee "$RESULTS_DIR/large-n.txt" | tee -a "$RESULTS_DIR/test-run.log"
-
-echo "Test run completed at $(date)" | tee -a "$RESULTS_DIR/test-run.log"
-echo "Results saved to: $RESULTS_DIR"
+# With Docker
+docker run --rm --network host \
+  -v $(pwd):/tests \
+  grafana/k6:latest run /tests/custom-test.js
 ```
 
 ---
 
 ## Interpreting Results
 
-### Understanding Vegeta Output
+### Understanding k6 Output
 
 ```
-Requests      [total, rate]            3000, 100.10
-Duration      [total, attack, wait]    30s, 29.97s, 29.18ms
-Latencies     [mean, 50, 95, 99, max]  185ms, 167ms, 289ms, 401ms, 1.2s
-Bytes In      [total, mean]            4500000, 1500.00
-Bytes Out     [total, mean]            0, 0.00
-Success       [ratio]                  100.00%
-Status Codes  [code:count]             200:3000
-Error Set:
+✓ status is 200
+✓ has data
+
+checks:
+..................--------.--.
+
+✓ status is 200 [ 95% ]
+✗ has data     [ 80% ]
+
+/data......................... .......... .......... .......... ......
+/data......................... .......... .......... .......... ......
+/data......................... .......... .......... .......... ......
+data................... .......... .......... .......... .......... ..
+data................... .......... .......... .......... .......... ..
+data................... .......... .......... .......... .......... ..
+
+✓ status is 200 [ 99% ]
+✓ has data     [ 95% ]
 ```
 
 **Key metrics:**
-- **Requests [total]**: Total requests made
-- **Requests [rate]**: Actual requests per second achieved
-- **Duration [attack]**: Time spent sending requests
-- **Duration [wait]**: Time waiting for responses
-- **Latencies [50]**: p50 (median) latency
-- **Latencies [95]**: p95 latency (95% of requests faster than this)
-- **Latencies [99]**: p99 latency (99% of requests faster than this)
-- **Success [ratio]**: Percentage of successful requests
+- **checks**: Pass/fail rates for assertions
+- **http_req_duration**: Request latency distribution
+- **http_req_failed**: Error rate
+- **vus**: Virtual users (concurrent connections)
 
-### Histogram Analysis
-
-```bash
-vegeta report -inputs=results.bin -type=hist[0,10ms,50ms,100ms,200ms,500ms,1s,2s]
-```
-
-Output example:
-```
-Bucket           #       %       Histogram
-[0ms, 10ms]      234     7.8%    ▃
-[10ms, 50ms]     1456    48.5%   ████████████▊
-[50ms, 100ms]    892     29.7%   ███████▏
-[100ms, 200ms]   312     10.4%   ██▏
-[200ms, 500ms]   96      3.2%    ▎
-[500ms, 1s]      8       0.3%
-[1s, 2s]         2       0.1%
-```
-
-**Interpretation:**
-- Most requests (48.5%) complete in 10-50ms (cache hits)
-- 86% of requests complete in <100ms
-- Only 3.6% take >200ms (likely cache misses)
+**Percentiles:**
+- **p(50)**: Median latency (50% of requests)
+- **p(95)**: 95th percentile (95% of requests faster than this)
+- **p(99)**: 99th percentile (99% of requests faster than this)
 
 ---
 

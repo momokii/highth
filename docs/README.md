@@ -113,19 +113,72 @@ This query pattern is used by:
 | **Go + chi router** | Compiled performance, goroutines for concurrency, simple deployment |
 | **pgx driver** | Best Go PostgreSQL driver with connection pooling and binary protocol |
 | **Redis caching** | 30s TTL balances freshness vs performance; 5-15ms cache hits |
-| **Vegeta for testing** | Go-native, excellent metrics, attack-based realistic testing |
+| **k6 for testing** | Modern JavaScript-based testing with Docker integration, excellent metrics |
+| **Automated migrations** | Schema versioning with tracking and safe application |
 
 ## Documentation Structure
 
 ```
 /docs
-├── README.md               ← This file (Project overview)
-├── architecture.md         ← Schema design, indexing strategy, caching
-├── stack.md                ← Full tech stack with justifications
-├── api-spec.md             ← Complete API contract
-├── testing.md              ← Test plan, scenarios, pass/fail criteria
-└── ui-consideration.md     ← Portfolio value assessment
+├── README.md                    ← This file (Project overview)
+├── architecture.md              ← Schema design, indexing strategy, caching
+├── stack.md                     ← Full tech stack with justifications
+├── api-spec.md                  ← Complete API contract
+├── testing.md                   ← Test plan, scenarios, pass/fail criteria
+├── ui-consideration.md          ← Portfolio value assessment
+├── implementation/              ← Step-by-step implementation guide
+│   ├── README.md                ← Implementation overview
+│   ├── plan.md                  ← Master phased plan
+│   ├── dev-environment.md       ← Tool installation
+│   ├── database-setup.md        ← Database provisioning
+│   ├── data-generation.md       ← Generate 50M test dataset
+│   ├── api-development.md       ← Build the Go API
+│   ├── cache-setup.md           ← Redis caching integration
+│   ├── load-testing-setup.md    ← k6 load testing execution
+│   └── validation-checklist.md  ← End-to-end verification
+└── future-enhancements/         ← Features designed but not yet implemented
+    ├── README.md                ← Future enhancements overview
+    ├── 01-nginx-reverse-proxy.md ← Nginx implementation guide
+    ├── 02-metadata-jsonb-column.md ← Adding metadata column
+    ├── 03-partitioning-strategy.md ← Table partitioning for 100M+ scale
+    └── 04-schema-type-corrections.md ← Schema type alignment options
 ```
+
+## Migration System
+
+The project includes an **automated migration system** that tracks and applies database schema changes safely.
+
+### Features
+
+- **Version tracking**: Each migration is numbered (001, 002, 003, etc.)
+- **Automatic application**: Only runs pending migrations (safe to re-run)
+- **Checksums**: Validates migration integrity before applying
+- **Backfill support**: Can backfill migrations for existing databases
+- **Incremental materialized views**: Optimized refresh for large datasets
+
+### Usage
+
+```bash
+# Run all pending migrations
+./scripts/run_migrations.sh
+
+# Run specific migration
+docker exec -i highth-postgres psql -U sensor_user -d sensor_db < scripts/schema/migrations/006_covering_index.sql
+
+# Check migration status
+./scripts/run_migrations.sh --status
+```
+
+### Migration Files
+
+| Migration | Purpose | When to Run |
+|-----------|---------|-------------|
+| 001_init_schema.sql | Base table creation | First setup |
+| 002_advanced_indexes.sql | BRIN and composite indexes | After data generation |
+| 003_seed_data.sql | Initial seed data | First setup |
+| 004_materialized_views.sql | Dashboard performance views | After data generation |
+| 005_incremental_mv_refresh.sql | Optimized MV refresh functions | After MV creation |
+| 006_covering_index.sql | Index-only scan optimization | Production deployment |
 
 ## Project Scope
 

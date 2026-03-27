@@ -23,12 +23,13 @@ CREATE TABLE sensor_readings (
     id              BIGSERIAL       PRIMARY KEY,
     device_id       VARCHAR(50)     NOT NULL,
     timestamp       TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
-    reading_type    VARCHAR(30)     NOT NULL,
-    value           NUMERIC(15,6)   NOT NULL,
-    unit            VARCHAR(20)     NOT NULL,
-    metadata        JSONB
+    reading_type    VARCHAR(20)     NOT NULL,
+    value           DECIMAL(10,2)   NOT NULL,
+    unit            VARCHAR(20)     NOT NULL
 );
 ```
+
+> **Note:** The original design specified `reading_type VARCHAR(30)`, `value NUMERIC(15,6)`, and `metadata JSONB`. The current implementation uses `VARCHAR(20)` with a CHECK constraint for known reading types, and `DECIMAL(10,2)` which is sufficient for IoT sensor data. See [Future Enhancements](../future-enhancements/04-schema-type-corrections.md) for alignment options.
 
 #### Column Descriptions
 
@@ -37,52 +38,39 @@ CREATE TABLE sensor_readings (
 | `id` | BIGSERIAL | Primary key; unique identifier for each reading |
 | `device_id` | VARCHAR(50) | The repeating identifier; groups readings by device |
 | `timestamp` | TIMESTAMPTZ | When the reading was taken; supports time-series queries |
-| `reading_type` | VARCHAR(30) | Type of sensor reading (temperature, humidity, pressure, etc.) |
-| `value` | NUMERIC(15,6) | The actual sensor value; high precision for scientific data |
-| `unit` | VARCHAR(20) | Unit of measurement (celsius, fahrenheit, pascals, percent, etc.) |
-| `metadata` | JSONB | Flexible storage for device-specific data (firmware version, battery level, etc.) |
+| `reading_type` | VARCHAR(20) | Type of sensor reading (temperature, humidity, pressure) with CHECK constraint |
+| `value` | DECIMAL(10,2) | The actual sensor value; precision sufficient for IoT data |
+| `unit` | VARCHAR(20) | Unit of measurement (celsius, percent, pascals, etc.) |
 
 ### Schema Design Rationale
 
-**Why JSONB for metadata?**
+**Why DECIMAL(10,2) for value?**
 
-The `metadata` column uses PostgreSQL's JSONB type to store flexible, device-specific data:
+- **10 total digits** — Supports values up to ±99,999,999.99
+- **2 decimal places** — Precision sufficient for IoT sensor data (temperature, humidity, pressure)
+- **Exact decimal arithmetic** — No floating-point rounding errors
 
-```json
-{
-  "firmware_version": "2.1.0",
-  "battery_level": 87,
-  "sensor_calibration_date": "2024-01-15",
-  "location": {
-    "building": "Building A",
-    "floor": 3,
-    "room": "301"
-  }
-}
+> **Note:** For scientific applications requiring 6 decimal places, see [Future Enhancements](../future-enhancements/04-schema-type-corrections.md).
+
+**CHECK constraint on reading_type:**
+
+The schema includes a CHECK constraint to ensure data integrity:
+```sql
+CHECK (reading_type IN ('temperature', 'humidity', 'pressure'))
 ```
 
-**Benefits:**
-- Schema flexibility — different device types can have different metadata fields
-- Queryable — JSONB supports indexing and querying within the JSON structure
-- Efficient storage — binary format with decompression for fast access
-- No schema migrations required when adding new metadata fields
-
-**Why NUMERIC(15,6) for value?**
-
-- **15 total digits** — Supports large values (e.g., 999,999,999.999999)
-- **6 decimal places** — Precision sufficient for scientific sensor data
-- **Exact decimal arithmetic** — No floating-point rounding errors
+This prevents typos and ensures only valid reading types are stored.
 
 ---
 
 ## Indexing Strategy
 
-Proper indexing is critical to meeting the ≤500ms performance target at 50M rows. Our strategy uses three complementary indexes.
+Proper indexing is critical to meeting the ≤500ms performance target at 50M rows. Our strategy uses multiple complementary indexes.
 
 ### Index 1: BRIN Index for Time-Series Queries
 
 ```sql
-CREATE INDEX idx_sensor_readings_ts_brin
+CREATE INDEX idx_sensor_readings_timestamp_brin
     ON sensor_readings
     USING BRIN (timestamp);
 ```
@@ -106,39 +94,33 @@ For time-series data where readings are appended in roughly chronological order,
 - **Faster index maintenance** — Less overhead on inserts
 - **Sufficient query performance** — Time ranges naturally map to page ranges
 
-### Index 2: Composite B-tree for Device Lookups
+### Index 2: Composite B-tree for Device Lookups (Actual Implementation)
 
 ```sql
-CREATE INDEX idx_sensor_readings_device_ts
-    ON sensor_readings (device_id, timestamp DESC);
+CREATE INDEX idx_sensor_readings_device_type_timestamp
+    ON sensor_readings (device_id, reading_type, timestamp DESC);
 ```
 
-**Why composite (device_id, timestamp DESC)?**
+**Why include reading_type in the composite index?**
 
-The primary query pattern is:
+The actual implementation includes `reading_type` as the second column, which provides additional optimization for queries filtering by reading type:
 
 ```sql
+-- Query pattern with reading_type filter
 SELECT * FROM sensor_readings
-WHERE device_id = ?
+WHERE device_id = 'sensor-001'
+  AND reading_type = 'temperature'
 ORDER BY timestamp DESC
-LIMIT ?;
+LIMIT 10;
 ```
 
-**Key optimization:** The composite index serves both the `WHERE` clause and the `ORDER BY` clause:
+This index efficiently serves both:
+- Queries with device_id only (first column is used)
+- Queries with device_id + reading_type (first two columns are used)
 
-1. **device_id first** — Quickly narrows to rows for the specific device
-2. **timestamp DESC** — Index stores rows in the exact order needed, eliminating the sort step
+> **Note:** The original design specified a simpler composite index on `(device_id, timestamp DESC)`. The actual implementation adds `reading_type` for additional filtering capability. See [future-enhancements/04-schema-type-corrections.md](../future-enhancements/04-schema-type-corrections.md) for alignment options.
 
-Without this index, PostgreSQL would:
-1. Find all rows for the device (using a device_id-only index)
-2. Sort them by timestamp DESC (expensive at millions of rows per device)
-
-With this index, PostgreSQL:
-1. Seeks directly to the device's entries in the index
-2. Scans in DESC order (already sorted)
-3. Returns the first N rows (no sort needed)
-
-### Index 3: Covering Index for Index-Only Scans
+### Index 3: Covering Index for Index-Only Scans (Added in Migration 006)
 
 ```sql
 CREATE INDEX idx_sensor_readings_device_covering
@@ -165,11 +147,8 @@ All of these are in the covering index — **no heap access required**.
 - Eliminates random I/O to heap pages
 - Reduces cache misses
 - Typically 2-5x faster than queries requiring heap access
-
-The `metadata` column is intentionally excluded because:
-- It's less frequently accessed (display-only)
-- It's variable-size (expensive to include in index)
-- It can be fetched on-demand if needed
+- Before: Index Scan + Heap Access (50-200ms on 50M rows)
+- After: Index-Only Scan (5-50ms on 50M rows)
 
 ---
 
@@ -266,12 +245,14 @@ At 50M rows with proper indexing, even cold queries should meet the ≤500ms tar
 
 ```go
 poolConfig, err := pgxpool.ParseConfig(os.Getenv("DATABASE_URL"))
-poolConfig.MaxConns = 25           // Maximum connections
-poolConfig.MinConns = 5            // Minimum idle connections
+poolConfig.MaxConns = 50           // Maximum connections
+poolConfig.MinConns = 10           // Minimum idle connections
 poolConfig.MaxConnLifetime = 1 * time.Hour
-poolConfig.MaxConnIdleTime = 30 * time.Minute
-poolConfig.HealthCheckPeriod = 1 * time.Minute
+poolConfig.MaxConnIdleTime = 10 * time.Minute
+poolConfig.HealthCheckPeriod = 30 * time.Second
 ```
+
+> **Note:** The actual implementation uses higher connection limits (50 max, 10 min) than originally documented (25 max, 5 min) to support higher concurrency. The idle timeout is also shorter (10 min vs 30 min) for more aggressive connection cleanup.
 
 ### Connection Pool Sizing
 

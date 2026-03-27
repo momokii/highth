@@ -236,7 +236,7 @@ This is a **portfolio-quality demonstration** that proves PostgreSQL can handle 
 | **BRIN Indexes** | 99% smaller than B-tree; perfect for append-only time-series data | Efficient time-range queries on 50M+ rows without massive storage overhead |
 | **Materialized Views** | 100-200× faster dashboard queries (50-200ms → 1-5ms) | Real-time aggregations across millions of rows for dashboards |
 | **Redis LRU Cache** | 100× speedup on cache hits (500ms → 5ms) | Hot device queries (20% of devices get 80% of traffic) |
-| **Covering Indexes** | Index-only scans eliminate table lookups | Fast "last N readings" queries without touching the heap |
+| **Covering Indexes** (Migration 006) | Index-only scans eliminate heap access (2-5× faster) | Fast "last N readings" queries: 50-200ms → 5-50ms |
 | **Connection Pooling** | 10K+ concurrent requests | High concurrency without overwhelming the database |
 | **Incremental MV Refresh** | Refresh only last N days (7 for hourly, 30 for daily) | Efficient materialized view updates without full rebuilds |
 
@@ -247,7 +247,7 @@ This is a **portfolio-quality demonstration** that proves PostgreSQL can handle 
 | **API** | Go 1.21+ | Goroutines handle 10K+ concurrent connections; pgx driver uses binary protocol for faster queries; 20MB Docker image |
 | **Database** | PostgreSQL 16 | BRIN indexes (perfect for time-series), materialized views (pre-computed aggregations), JSONB metadata, declarative partitioning-ready |
 | **Cache** | Redis 7 | LRU eviction keeps hot keys cached; 30s TTL balances freshness vs performance; cache-aside pattern is resilient to failures |
-| **Pool** | pgx built-in | Connection pooling directly in the Go application; 25 max connections with 5 min idle timeout; no separate PgBouncer needed |
+| **Pool** | pgx built-in | Connection pooling directly in the Go application; 50 max connections with 10 min idle timeout; no separate PgBouncer needed |
 | **Metrics** | Prometheus | Built-in `/metrics` endpoint; tracks request latency, cache hit rate, database pool stats; industry standard |
 | **Testing** | k6 | Modern JavaScript-based load testing; built-in percentiles (p50, p95, p99); Docker integration for consistent testing |
 
