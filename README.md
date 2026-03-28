@@ -1569,6 +1569,7 @@ grep -A 2 "volumes:" docker-compose.yml
 
 ### Documentation Files
 
+- **`docs/high-throughput-guide/`** - **Production guide** for building high-throughput PostgreSQL + Golang systems (≤500ms median latency)
 - **`docs/api-spec.md`** - Complete REST API specification with all endpoints
 - **`docs/architecture.md`** - Detailed system architecture and design decisions
 - **`docs/stack.md`** - Technology stack details and version requirements
