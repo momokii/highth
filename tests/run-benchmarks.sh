@@ -309,7 +309,7 @@ run_scenario() {
         echo "  Duration:    $DURATION"
     fi
     if [ -n "$VUS" ]; then
-        echo "  Custom VUs:  $VUS"
+        echo "  Custom VUs:  $VUS (maxVUs ceiling — actual concurrency depends on RPS and latency)"
     fi
     echo "  Output:      $output_file"
     echo ""
@@ -340,12 +340,17 @@ run_scenario() {
 
     # Inject scenario metadata into the JSON summary
     local summary_file="$RESULTS_DIR/${scenario_name}_${timestamp}.json"
-    if [ -f "$summary_file" ] && command -v jq &> /dev/null; then
+    if [ -f "$summary_file" ] && [ -s "$summary_file" ] && command -v jq &> /dev/null; then
         jq --arg scenario "$scenario_name" \
            --arg scenario_file "$scenario_file" \
            --arg timestamp "$timestamp" \
            '. + {scenario: $scenario, scenario_file: $scenario_file, timestamp: $timestamp}' \
-           "$summary_file" > "${summary_file}.tmp" && mv "${summary_file}.tmp" "$summary_file"
+           "$summary_file" > "${summary_file}.tmp" 2>/dev/null
+        if [ $? -eq 0 ] && [ -s "${summary_file}.tmp" ]; then
+            command rm -f "$summary_file" && command mv "${summary_file}.tmp" "$summary_file"
+        else
+            rm -f "${summary_file}.tmp"
+        fi
     fi
 
     # Track result file for HTML report generation
@@ -634,7 +639,9 @@ main() {
     if [ -n "$SCENARIO" ]; then
         # Run single scenario
         if [[ ${SCENARIOS[$SCENARIO]+_} ]]; then
-            run_scenario "$SCENARIO" "${SCENARIOS[$SCENARIO]}"
+            if ! run_scenario "$SCENARIO" "${SCENARIOS[$SCENARIO]}"; then
+                print_error "Scenario '$SCENARIO' failed"
+            fi
         else
             print_error "Unknown scenario: $SCENARIO"
             print_info "Available scenarios: ${!SCENARIOS[@]}"
