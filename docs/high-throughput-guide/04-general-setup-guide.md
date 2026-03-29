@@ -343,9 +343,44 @@ services:
       -c shared_buffers=2GB
       -c effective_cache_size=6GB
       -c work_mem=16MB
+      -c maintenance_work_mem=1GB
       -c random_page_cost=1.1
       -c effective_io_concurrency=200
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c max_worker_processes=8
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=8
+      -c bgwriter_delay=200ms
+      -c bgwriter_lru_maxpages=100
 ```
+
+#### PostgreSQL Parameters Explained
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| **Memory** |||
+| `shared_buffers` | 2GB | PostgreSQL disk cache (25% of RAM on 8GB system) |
+| `effective_cache_size` | 6GB | Planner's estimate of total cache (PG + OS file cache) |
+| `work_mem` | 16MB | Memory per sort/hash operation (per query node, not total) |
+| `maintenance_work_mem` | 1GB | Memory for VACUUM, CREATE INDEX, and other maintenance |
+| **Connections** |||
+| `max_connections` | 200 | Max concurrent DB connections (for connection pooling) |
+| **WAL** |||
+| `wal_buffers` | 16MB | Write-Ahead Log memory buffer |
+| `checkpoint_completion_target` | 0.9 | Spread checkpoint I/O over 90% of interval (prevents spikes) |
+| **Query Planner** |||
+| `random_page_cost` | 1.1 | Cost of non-sequential disk access (lower = optimized for SSD) |
+| `effective_io_concurrency` | 200 | Parallel I/O operations SSD can handle |
+| **Parallelism** |||
+| `max_worker_processes` | 8 | Max background workers (matches CPU cores) |
+| `max_parallel_workers_per_gather` | 2 | Max parallel workers per single query |
+| `max_parallel_workers` | 8 | Max parallel workers across all operations |
+| **Background Writer** |||
+| `bgwriter_delay` | 200ms | Delay between background writer rounds |
+| `bgwriter_lru_maxpages` | 100 | Max buffers flushed per round (800KB per 200ms) |
+
+> **For detailed explanations of each parameter** including trade-offs and what happens if values are too low or too high, see [01-postgresql-setup.md](./01-postgresql-setup.md#parameter-explanations).
 
 ### Golang Connection Pool
 

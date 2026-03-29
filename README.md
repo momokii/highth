@@ -515,6 +515,7 @@ cp .env.example .env
 
 # Edit if needed (defaults work for most cases)
 # .env includes:
+# - POSTGRES_PASSWORD=sensor_password (change for production)
 # - POSTGRES_PORT=5434 (avoids conflict with local PostgreSQL)
 # - REDIS_PORT=6380 (avoids conflict with local Redis)
 # - API_PORT=8080
@@ -533,6 +534,20 @@ docker-compose ps
 docker-compose logs -f api
 docker-compose logs -f postgres
 ```
+
+#### PostgreSQL Configuration
+
+The `docker-compose.yml` includes 14 performance-tuned PostgreSQL parameters optimized for high-throughput time-series workloads on an 8GB RAM system.
+
+**Parameters include:**
+- **Memory tuning**: `shared_buffers=2GB`, `effective_cache_size=6GB`, `work_mem=16MB`, `maintenance_work_mem=1GB`
+- **WAL optimization**: `wal_buffers=16MB`, `checkpoint_completion_target=0.9`
+- **SSD optimization**: `random_page_cost=1.1`, `effective_io_concurrency=200`
+- **Parallelism**: `max_worker_processes=8`, `max_parallel_workers_per_gather=2`, `max_parallel_workers=8`
+- **Background writer**: `bgwriter_delay=200ms`, `bgwriter_lru_maxpages=100`
+- **Connections**: `max_connections=200`
+
+> **For detailed explanation of each parameter and why these values were chosen**, see [docs/high-throughput-guide/01-postgresql-setup.md](docs/high-throughput-guide/01-postgresql-setup.md#parameter-explanations).
 
 **Step 3: Initialize Database**
 

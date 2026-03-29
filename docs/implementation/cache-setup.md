@@ -92,8 +92,6 @@ redis-cli ping
 Add to `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine

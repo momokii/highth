@@ -58,8 +58,16 @@ services:
       -c shared_buffers=2GB
       -c effective_cache_size=6GB
       -c work_mem=16MB
+      -c maintenance_work_mem=1GB
       -c random_page_cost=1.1
       -c effective_io_concurrency=200
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c max_worker_processes=8
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=8
+      -c bgwriter_delay=200ms
+      -c bgwriter_lru_maxpages=100
     environment:
       POSTGRES_DB: app_db
       POSTGRES_USER: app_user
@@ -72,15 +80,49 @@ services:
 
 ### Parameter Explanations
 
-| Parameter | Value | Why |
-|-----------|-------|-----|
-| `shared_buffers` | 2GB | Cached data pages (25% of RAM on 8GB system) |
-| `effective_cache_size` | 6GB | Query planner's estimate of available cache |
-| `work_mem` | 16MB | Memory for sorting/hashing per operation |
-| `random_page_cost` | 1.1 | Optimizes for SSD (default is 4.0 for HDD) |
-| `effective_io_concurrency` | 200 | Parallel I/O operations for SSD |
-| `max_connections` | 200 | Sufficient for connection pooling |
-| `checkpoint_completion_target` | 0.9 | Spreads checkpoint I/O over time |
+#### Memory Configuration
+
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| `shared_buffers` | 2GB | **What:** Memory PostgreSQL uses for caching disk pages. <br>**Why 2GB:** 25% of available RAM on an 8GB system. This is the traditional recommendation for OLTP workloads. <br>**Too low:** Excessive disk I/O from buffer cache misses. <br>**Too high:** OS has less memory for file system cache, potentially hurting overall performance. |
+| `effective_cache_size` | 6GB | **What:** Query planner's estimate of total available cache (PostgreSQL shared buffers + OS file system cache). <br>**Why 6GB:** 75% of RAM (8GB - 2GB shared_buffers = 6GB for OS cache). Tells the planner it can use more memory for sequential scans. <br>**Too low:** Planner chooses index scans when sequential scans would be faster. <br>**Too high:** Planner may overestimate available memory and choose poor plans. |
+| `work_mem` | 16MB | **What:** Maximum memory for sorting, hashing, and other operations **per query execution node** (not per entire query). <br>**Why 16MB:** Balances memory usage with query performance. A query with 3 sorts/hash operations can use up to 48MB total. <br>**Too low:** Queries spill to disk during sorts/hashes, causing massive slowdown. <br>**Too high:** Many concurrent queries can exhaust system memory (memory = work_mem × operations × concurrent queries). |
+| `maintenance_work_mem` | 1GB | **What:** Memory for maintenance operations (VACUUM, CREATE INDEX, ALTER TABLE). <br>**Why 1GB:** Maintenance operations are memory-intensive but less frequent. Larger values significantly speed up index creation and VACUUM. <br>**Too low:** Index creation on large tables takes hours; VACUUM operations slow down database. <br>**Too high:** Can starve query operations during maintenance. |
+
+#### Connection Configuration
+
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| `max_connections` | 200 | **What:** Maximum concurrent database connections. <br>**Why 200:** Sufficient for connection pooling with PgBouncer. Each connection consumes ~2-10MB RAM. <br>**Too low:** Application errors from connection exhaustion during load spikes. <br>**Too high:** PostgreSQL process-per-connection model consumes excessive RAM; connection contention increases. |
+
+#### Write-Ahead Log (WAL) Configuration
+
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| `wal_buffers` | 16MB | **What:** Memory buffer for Write-Ahead Log data before writing to disk. <br>**Why 16MB:** Reduces WAL write frequency. Default (-1) is 3% of shared_buffers (~62MB), but 16MB is sufficient for most workloads. <br>**Too low:** Frequent small WAL writes increase I/O. <br>**Too high:** Wastes memory that could be used for data caching. |
+| `checkpoint_completion_target` | 0.9 | **What:** Target percentage of WAL segments to write during a checkpoint (vs spreading across the interval). <br>**Why 0.9:** Spreads checkpoint I/O over 90% of the checkpoint interval, preventing sudden I/O spikes that hurt query performance. <br>**Too low:** Checkpoints complete quickly but cause massive I/O bursts. <br>**Too high:** Checkpoints may not finish before next checkpoint triggers, causing performance issues. |
+
+#### Query Planner Configuration
+
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| `random_page_cost` | 1.1 | **What:** Planner's cost estimate for non-sequentially-fetched disk pages. <br>**Why 1.1:** Optimizes for SSD storage (default 4.0 is for HDD). On SSD, random access is nearly as fast as sequential. <br>**Too high (HDD default):** Planner avoids index scans in favor of sequential scans, hurting performance on indexed queries. <br>**Too low:** Planner may choose index scans excessively, not accounting for actual I/O patterns. |
+| `effective_io_concurrency` | 200 | **What:** Number of parallel I/O operations the planner estimates the system can handle. <br>**Why 200:** Reflects SSD parallelism. Modern SSDs can handle 200+ concurrent I/O operations efficiently. <br>**Too low:** Planner underestimates I/O throughput, leading to suboptimal plans. <br>**Too high:** Planner overestimates parallelism, potentially choosing bitmap scans over index scans. |
+
+#### Parallelism Configuration
+
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| `max_worker_processes` | 8 | **What:** Maximum background worker processes (for parallel queries, autovacuum, etc.). <br>**Why 8:** Matches CPU core count on typical systems. Background workers use CPU for parallel query execution. <br>**Too low:** Parallel queries can't use all CPU cores. <br>**Too high:** Workers compete for CPU time, causing context switching overhead. |
+| `max_parallel_workers_per_gather` | 2 | **What:** Maximum parallel workers for a single query operation (e.g., parallel sequential scan). <br>**Why 2:** Conservative setting to avoid overwhelming the system with parallel workers on concurrent queries. 2-4 is typically optimal. <br>**Too low:** Queries don't benefit from parallel execution. <br>**Too high:** Too many parallel workers on concurrent queries cause CPU contention. |
+| `max_parallel_workers` | 8 | **What:** Maximum number of parallel worker processes across all operations. <br>**Why 8:** Should equal `max_worker_processes` minus workers reserved for autovacuum. <br>**Too low:** Limits parallel query throughput. <br>**Too high:** Can starve autovacuum workers, leading to table bloat. |
+
+#### Background Writer Configuration
+
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| `bgwriter_delay` | 200ms | **What:** Delay between background writer rounds (process that writes dirty buffers to disk). <br>**Why 200ms:** Balances write frequency with burstiness. Default 200ms is appropriate for most workloads. <br>**Too low:** Excessive small writes, wasting I/O bandwidth. <br>**Too high:** Dirty buffers accumulate, causing larger write spikes during checkpoints. |
+| `bgwriter_lru_maxpages` | 100 | **What:** Maximum number of buffers the background writer will flush per round. <br>**Why 100:** Limits the I/O burst size per background writer round. 100 pages × 8KB = 800KB max per 200ms. <br>**Too low:** Background writer can't keep up with dirty buffer generation, forcing checkpoints to do more work. <br>**Too high:** Each round causes larger I/O spikes, potentially interfering with query I/O. |
 
 ## Table Design for Exact-ID Queries
 

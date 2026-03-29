@@ -264,8 +264,6 @@ ORDER BY pg_relation_size(indexrelid) DESC;
 ### Docker Compose Configuration
 
 ```yaml
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -281,15 +279,20 @@ services:
       - "5432:5432"
     command: >
       postgres
-      -c shared_buffers=256MB
-      -c effective_cache_size=1GB
+      -c max_connections=200
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
       -c work_mem=16MB
-      -c maintenance_work_mem=128MB
+      -c maintenance_work_mem=1GB
       -c random_page_cost=1.1
       -c effective_io_concurrency=200
-      -c max_connections=100
-      -c shared_preload_libraries=pg_stat_statements
-      -c log_min_duration_statement=100ms
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c max_worker_processes=8
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=8
+      -c bgwriter_delay=200ms
+      -c bgwriter_lru_maxpages=100
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sensor_user -d sensor_db"]
@@ -303,16 +306,30 @@ volumes:
 
 ### Configuration Parameters Explained
 
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| `shared_buffers` | 256MB | Memory for disk caching; 25% of RAM on dev machine |
-| `effective_cache_size` | 1GB | Query planner's estimate of available memory |
-| `work_mem` | 16MB | Memory for sorting/hash operations per operation |
-| `maintenance_work_mem` | 128MB | Memory for VACUUM/CREATE INDEX operations |
-| `random_page_cost` | 1.1 | Cost of non-sequentially-fetched disk page; lower for SSD |
-| `effective_io_concurrency` | 200 | Concurrent I/O operations; higher for SSD |
-| `max_connections` | 100 | Maximum concurrent connections |
-| `log_min_duration_statement` | 100ms | Log slow queries for performance analysis |
+| Parameter | Value | Explanation |
+|-----------|-------|-------------|
+| **Memory** |||
+| `shared_buffers` | 2GB | PostgreSQL disk cache (25% of RAM on 8GB system) |
+| `effective_cache_size` | 6GB | Planner's estimate of total cache (PG + OS file cache = 75% of RAM) |
+| `work_mem` | 16MB | Memory per sort/hash operation (per query execution node) |
+| `maintenance_work_mem` | 1GB | Memory for VACUUM, CREATE INDEX, and other maintenance operations |
+| **Connections** |||
+| `max_connections` | 200 | Max concurrent database connections (sufficient for connection pooling) |
+| **WAL (Write-Ahead Log)** |||
+| `wal_buffers` | 16MB | Write-Ahead Log memory buffer |
+| `checkpoint_completion_target` | 0.9 | Spread checkpoint I/O over 90% of interval (prevents I/O spikes) |
+| **Query Planner (SSD optimized)** |||
+| `random_page_cost` | 1.1 | Cost of non-sequential disk access (default 4.0 is for HDD) |
+| `effective_io_concurrency` | 200 | Parallel I/O operations SSD can handle |
+| **Parallelism** |||
+| `max_worker_processes` | 8 | Max background worker processes (matches CPU cores) |
+| `max_parallel_workers_per_gather` | 2 | Max parallel workers per single query operation |
+| `max_parallel_workers` | 8 | Max parallel workers across all operations |
+| **Background Writer** |||
+| `bgwriter_delay` | 200ms | Delay between background writer rounds |
+| `bgwriter_lru_maxpages` | 100 | Max buffers flushed per round (limits I/O burst size) |
+
+> **Note:** These parameters are tuned for an 8GB RAM system with SSD storage. For different hardware, adjust based on available RAM and storage characteristics. For detailed explanations of each parameter including trade-offs, see [high-throughput-guide/01-postgresql-setup.md](../high-throughput-guide/01-postgresql-setup.md#parameter-explanations).
 
 ---
 

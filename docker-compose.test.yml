@@ -14,8 +14,6 @@
 # Version: 1.0.0
 # Date: 2026-03-25
 
-version: '3.8'
-
 services:
   k6:
     image: grafana/k6:latest
@@ -43,15 +41,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - higth_network
+      - highth-network
     # Keep test container running for manual testing
     stdin_open: true
     tty: true
-
-volumes:
-  test-results:
-    driver: local
-
-networks:
-  higth_network:
-    external: true

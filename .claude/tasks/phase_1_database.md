@@ -34,8 +34,6 @@ Create docker-compose.yml to run PostgreSQL and Redis containers.
 
 **Expected Contents:**
 ```yaml
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine

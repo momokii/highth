@@ -389,8 +389,6 @@ server {
 ### Docker Compose Configuration
 
 ```yaml
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -405,10 +403,20 @@ services:
       - "5432:5432"
     command: >
       postgres
-      -c shared_buffers=256MB
-      -c effective_cache_size=1GB
+      -c max_connections=200
+      -c shared_buffers=2GB
+      -c effective_cache_size=6GB
       -c work_mem=16MB
-      -c maintenance_work_mem=128MB
+      -c maintenance_work_mem=1GB
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c max_worker_processes=8
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_workers=8
+      -c bgwriter_delay=200ms
+      -c bgwriter_lru_maxpages=100
 
   redis:
     image: redis:7-alpine
@@ -440,6 +448,9 @@ services:
 volumes:
   postgres_data:
 ```
+
+> **Note:** The PostgreSQL command above includes 14 performance-tuned parameters for high-throughput time-series workloads on an 8GB RAM system. For detailed explanation of each parameter and why these values were chosen, see [high-throughput-guide/01-postgresql-setup.md](../high-throughput-guide/01-postgresql-setup.md#parameter-explanations).
+
 
 ---
 
