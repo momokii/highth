@@ -28,8 +28,10 @@ services:
     environment:
       # API endpoint to test
       - TARGET_URL=http://api:8080
-      # k6 output format (HTML report)
-      - K6_OUT=html=results/report.html
+      # NOTE: grafana/k6:latest does NOT include the HTML output extension.
+      # Use the benchmark script with --with-html-report flag instead:
+      #   ./tests/run-benchmarks.sh --with-html-report
+      # - K6_OUT=html=results/report.html
       # k6 options
       - K6_NO_USAGE_REPORT=true
       - K6_SUMMARY_EXPORT=results/summary.json

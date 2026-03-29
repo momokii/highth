@@ -10,6 +10,7 @@
 #   ./run-benchmarks.sh --rps 100          # Custom RPS
 #   ./run-benchmarks.sh --duration 5m      # Custom duration
 #   ./run-benchmarks.sh --list             # List available scenarios
+#   ./run-benchmarks.sh --with-html-report # Generate HTML report
 #
 # Requirements:
 #   - Docker and Docker Compose
@@ -40,6 +41,10 @@ SCENARIO=""
 LIST_ONLY=false
 SKIP_SETUP=false
 VERBOSE=false
+WITH_HTML_REPORT=false
+
+# Array to track result files generated during this run
+RESULT_FILES=()
 
 # Available scenarios
 declare -A SCENARIOS=(
@@ -119,6 +124,10 @@ parse_args() {
                 VERBOSE=true
                 shift
                 ;;
+            --with-html-report)
+                WITH_HTML_REPORT=true
+                shift
+                ;;
             --help|-h)
                 show_help
                 exit 0
@@ -144,6 +153,7 @@ Options:
   -l, --list                List available scenarios
   --skip-setup              Skip service health checks
   -v, --verbose             Enable verbose output
+  --with-html-report        Generate HTML report alongside JSON output
   -h, --help                Show this help message
 
 Examples:
@@ -249,6 +259,12 @@ run_scenario() {
 
     print_info "Running k6 test..."
 
+    # Build k6 verbose flag if --verbose was passed
+    local k6_verbose_flag=""
+    if [ "$VERBOSE" = true ]; then
+        k6_verbose_flag="--verbose"
+    fi
+
     # Run k6 test directly (no eval, no string manipulation)
     docker run --rm --network host \
         -v "$SCRIPT_DIR:/tests" \
@@ -257,10 +273,19 @@ run_scenario() {
         -e CUSTOM_RPS="$RPS" \
         -e CUSTOM_DURATION="$DURATION" \
         grafana/k6:latest run \
+        $k6_verbose_flag \
         --summary-export="/results/summary_${timestamp}.json" \
         "/tests/scenarios/$scenario_file"
 
     local exit_code=$?
+
+    # Track result file for HTML report generation
+    RESULT_FILES+=("$RESULTS_DIR/summary_${timestamp}.json")
+
+    # Show parsed metrics summary in verbose mode
+    if [ "$VERBOSE" = true ] && command -v jq &> /dev/null; then
+        parse_k6_summary "$RESULTS_DIR/summary_${timestamp}.json"
+    fi
 
     if [ $exit_code -eq 0 ]; then
         print_success "Scenario '$scenario_name' completed"
@@ -281,11 +306,11 @@ parse_k6_summary() {
 
     # Parse JSON summary using basic tools (no jq dependency)
     if command -v jq &> /dev/null; then
-        local p50=$(jq -r '.metrics.http_req_duration.values["p(50)"] // "N/A"' "$summary_file")
-        local p95=$(jq -r '.metrics.http_req_duration.values["p(95)"] // "N/A"' "$summary_file")
-        local p99=$(jq -r '.metrics.http_req_duration.values["p(99)"] // "N/A"' "$summary_file")
-        local rps=$(jq -r '.metrics.http_reqs.values["rate"] // "N/A"' "$summary_file")
-        local errors=$(jq -r '.metrics.http_req_failed.values["rate"] // "N/A"' "$summary_file")
+        local p50=$(jq -r '.metrics.http_req_duration["p(50)"] // .metrics.http_req_duration.med // "N/A"' "$summary_file")
+        local p95=$(jq -r '.metrics.http_req_duration["p(95)"] // "N/A"' "$summary_file")
+        local p99=$(jq -r '.metrics.http_req_duration["p(99)"] // "N/A"' "$summary_file")
+        local rps=$(jq -r '.metrics.http_reqs.rate // "N/A"' "$summary_file")
+        local errors=$(jq -r '.metrics.http_req_failed.rate // "N/A"' "$summary_file")
 
         echo ""
         echo "Results:"
@@ -313,21 +338,171 @@ check_latency() {
 }
 
 generate_html_report() {
-    print_info "Generating HTML reports..."
-
-    # Use k6-to-html if available, otherwise use basic report
-    if command -v k6-to-html &> /dev/null; then
-        for json_file in "$RESULTS_DIR"/*.json; do
-            if [ -f "$json_file" ]; then
-                local html_file="${json_file%.json}.html"
-                k6-to-html "$json_file" -o "$html_file"
-                print_success "Generated: $html_file"
-            fi
-        done
-    else
-        print_warning "k6-to-html not installed. Install for HTML reports:"
-        print_info "  npm install -g k6-to-html"
+    if [ ${#RESULT_FILES[@]} -eq 0 ]; then
+        print_warning "No result files to convert to HTML"
+        return
     fi
+
+    print_info "Generating HTML reports (${#RESULT_FILES[@]} file(s))..."
+
+    for json_file in "${RESULT_FILES[@]}"; do
+        if [ ! -f "$json_file" ]; then
+            print_warning "Result file not found: $json_file"
+            continue
+        fi
+
+        local html_file="${json_file%.json}.html"
+        local basename=$(basename "$json_file" .json)
+
+        # Extract metrics using jq if available, otherwise use N/A
+        if command -v jq &> /dev/null; then
+            local p50=$(jq -r '.metrics.http_req_duration["p(50)"] // .metrics.http_req_duration.med // "N/A"' "$json_file")
+            local p95=$(jq -r '.metrics.http_req_duration["p(95)"] // "N/A"' "$json_file")
+            local p99=$(jq -r '.metrics.http_req_duration["p(99)"] // "N/A"' "$json_file")
+            local avg=$(jq -r '.metrics.http_req_duration.avg // "N/A"' "$json_file")
+            local med=$(jq -r '.metrics.http_req_duration.med // "N/A"' "$json_file")
+            local min=$(jq -r '.metrics.http_req_duration.min // "N/A"' "$json_file")
+            local max=$(jq -r '.metrics.http_req_duration.max // "N/A"' "$json_file")
+            local rps=$(jq -r '.metrics.http_reqs.rate // "N/A"' "$json_file")
+            local total_reqs=$(jq -r '.metrics.http_reqs.count // "N/A"' "$json_file")
+            local check_passes=$(jq -r '.metrics.checks.passes // "N/A"' "$json_file")
+            local check_fails=$(jq -r '.metrics.checks.fails // "N/A"' "$json_file")
+            local vus=$(jq -r '.metrics.vus.value // "N/A"' "$json_file")
+            local dropped=$(jq -r '.metrics.dropped_iterations.count // "0"' "$json_file")
+        else
+            local p50="N/A" p95="N/A" p99="N/A"
+            local avg="N/A" med="N/A" min="N/A" max="N/A"
+            local rps="N/A" total_reqs="N/A"
+            local check_passes="N/A" check_fails="N/A"
+            local vus="N/A" dropped="N/A"
+            print_warning "Install jq for detailed metrics. Using placeholders."
+        fi
+
+        # Calculate threshold status (pass/fail) for p50/p95/p99
+        local p50_status="pass" p95_status="pass" p99_status="pass"
+        if [ "$p50" != "N/A" ] && [ "$p50" != "null" ]; then
+            if (( $(echo "$p50 >= $P50_TARGET" | bc -l 2>/dev/null || echo "1") )); then
+                p50_status="fail"
+            fi
+        fi
+        if [ "$p95" != "N/A" ] && [ "$p95" != "null" ]; then
+            if (( $(echo "$p95 >= $P95_TARGET" | bc -l 2>/dev/null || echo "1") )); then
+                p95_status="fail"
+            fi
+        fi
+        if [ "$p99" != "N/A" ] && [ "$p99" != "null" ]; then
+            if (( $(echo "$p99 >= $P99_TARGET" | bc -l 2>/dev/null || echo "1") )); then
+                p99_status="fail"
+            fi
+        fi
+
+        # Get raw JSON for embedding (escape for HTML)
+        local raw_json=$(sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g' "$json_file")
+
+        # Generate HTML report
+        cat > "$html_file" << HTMLEOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>k6 Benchmark Report - ${basename}</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background: #f5f7fa; color: #1f2937; line-height: 1.6; padding: 20px; }
+.container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; }
+.header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 24px; }
+.header h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+.meta { opacity: 0.9; font-size: 14px; }
+.section { padding: 24px; border-bottom: 1px solid #e5e7eb; }
+.section:last-child { border-bottom: none; }
+.section h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: #374151; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+th { background: #f9fafb; font-weight: 600; color: #4b5563; }
+tr:last-child th, tr:last-child td { border-bottom: none; }
+.pass { color: #10b981; font-weight: 600; }
+.fail { color: #ef4444; font-weight: 600; }
+.metric-card { display: inline-block; background: #f9fafb; border-radius: 6px; padding: 16px; margin: 0 16px 16px 0; min-width: 140px; }
+.metric-card .label { font-size: 12px; color: #6b7280; margin-bottom: 4px; }
+.metric-card .value { font-size: 20px; font-weight: 600; color: #111827; }
+.metric-card .unit { font-size: 14px; color: #6b7280; font-weight: 400; }
+details { margin-top: 16px; }
+details summary { cursor: pointer; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 14px; font-weight: 500; }
+details summary:hover { background: #f3f4f6; }
+details pre { background: #1f2937; color: #e5e7eb; padding: 16px; border-radius: 4px; overflow: auto; font-size: 12px; margin-top: 8px; }
+.flag { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.flag.pass { background: #d1fae5; color: #065f46; }
+.flag.fail { background: #fee2e2; color: #991b1b; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>k6 Benchmark Report</h1>
+    <div class="meta">Generated: $(date -Iseconds 2>/dev/null || date) | Source: ${basename}</div>
+  </div>
+
+  <div class="section">
+    <h2>HTTP Request Duration</h2>
+    <table>
+      <thead>
+        <tr><th>Metric</th><th>Value</th><th>Target</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>p50</td><td>${p50} ms</td><td>&lt;${P50_TARGET}ms</td><td><span class="flag ${p50_status}">${p50_status}</span></td>
+        </tr>
+        <tr>
+          <td>p95</td><td>${p95} ms</td><td>&lt;${P95_TARGET}ms</td><td><span class="flag ${p95_status}">${p95_status}</span></td>
+        </tr>
+        <tr>
+          <td>p99</td><td>${p99} ms</td><td>&lt;${P99_TARGET}ms</td><td><span class="flag ${p99_status}">${p99_status}</span></td>
+        </tr>
+        <tr><td>Average</td><td>${avg} ms</td><td>-</td><td>-</td></tr>
+        <tr><td>Median</td><td>${med} ms</td><td>-</td><td>-</td></tr>
+        <tr><td>Min</td><td>${min} ms</td><td>-</td><td>-</td></tr>
+        <tr><td>Max</td><td>${max} ms</td><td>-</td><td>-</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Throughput</h2>
+    <table>
+      <tbody>
+        <tr><td><strong>Requests/sec</strong></td><td>${rps}</td></tr>
+        <tr><td><strong>Total Requests</strong></td><td>${total_reqs}</td></tr>
+        <tr><td><strong>Virtual Users</strong></td><td>${vus}</td></tr>
+        <tr><td><strong>Dropped Iterations</strong></td><td>${dropped}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Checks</h2>
+    <table>
+      <tbody>
+        <tr><td><strong>Passed</strong></td><td class="pass">${check_passes}</td></tr>
+        <tr><td><strong>Failed</strong></td><td class="fail">${check_fails}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>Raw JSON Data</h2>
+    <details>
+      <summary>Click to expand raw k6 summary JSON</summary>
+      <pre>${raw_json}</pre>
+    </details>
+  </div>
+</div>
+</body>
+</html>
+HTMLEOF
+
+        print_success "Generated HTML: $html_file"
+    done
 }
 
 run_all_scenarios() {
@@ -399,6 +574,11 @@ main() {
     else
         # Run all scenarios
         run_all_scenarios
+    fi
+
+    # Generate HTML report if requested
+    if [ "$WITH_HTML_REPORT" = true ]; then
+        generate_html_report
     fi
 
     echo ""
