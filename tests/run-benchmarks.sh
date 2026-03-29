@@ -314,6 +314,16 @@ run_scenario() {
     echo "  Output:      $output_file"
     echo ""
 
+    # Flush Redis before cache scenario to ensure cold cache start
+    if [ "$scenario_name" = "cache" ]; then
+        print_info "Flushing Redis cache for cold cache start..."
+        if docker exec highth-redis redis-cli FLUSHALL > /dev/null 2>&1; then
+            print_success "Redis cache flushed"
+        else
+            print_warning "Failed to flush Redis cache (container may not be running)"
+        fi
+    fi
+
     print_info "Running k6 test..."
 
     # Build k6 verbose flag if --verbose was passed

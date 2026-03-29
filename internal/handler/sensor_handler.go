@@ -36,6 +36,8 @@ func NewSensorHandler(service *service.SensorService) *SensorHandler {
 //   - device_id (required): Device identifier
 //   - limit (optional): Maximum number of readings to return (1-500, default 10)
 //   - reading_type (optional): Filter by reading type (temperature, humidity, pressure)
+//   - from (optional): ISO 8601 timestamp for start of time range
+//   - to (optional): ISO 8601 timestamp for end of time range
 func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
@@ -60,8 +62,38 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 	// Parse reading_type (optional)
 	readingType := r.URL.Query().Get("reading_type")
 
+	// Parse from (optional)
+	var from *time.Time
+	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
+		if t, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = &t
+		} else {
+			h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "from must be a valid ISO 8601 timestamp", start, ErrorDetails{
+				Parameter:   "from",
+				Provided:    fromStr,
+				Constraints: map[string]any{"format": "ISO 8601 (RFC3339)"},
+			})
+			return
+		}
+	}
+
+	// Parse to (optional)
+	var to *time.Time
+	if toStr := r.URL.Query().Get("to"); toStr != "" {
+		if t, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = &t
+		} else {
+			h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "to must be a valid ISO 8601 timestamp", start, ErrorDetails{
+				Parameter:   "to",
+				Provided:    toStr,
+				Constraints: map[string]any{"format": "ISO 8601 (RFC3339)"},
+			})
+			return
+		}
+	}
+
 	// Call service layer
-	readings, err := h.service.GetSensorReadings(r.Context(), deviceID, limit, readingType)
+	cacheStatus, readings, err := h.service.GetSensorReadings(r.Context(), deviceID, limit, readingType, from, to)
 	if err != nil {
 		h.handleServiceError(w, r, err, start)
 		return
@@ -76,7 +108,7 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 			"device_id":    deviceID,
 			"reading_type": readingType,
 		},
-	}, start)
+	}, start, cacheStatus)
 }
 
 // parseIntOrDefault parses a string to int or returns the default value.
@@ -92,10 +124,16 @@ func (h *SensorHandler) parseIntOrDefault(s string, defaultVal int) int {
 }
 
 // writeResponse writes a successful JSON response.
-func (h *SensorHandler) writeResponse(w http.ResponseWriter, r *http.Request, status int, data interface{}, start time.Time) {
+// If cacheStatus is non-empty, sets X-Cache-Status header (HIT, MISS, or BYPASS).
+func (h *SensorHandler) writeResponse(w http.ResponseWriter, r *http.Request, status int, data interface{}, start time.Time, cacheStatus string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Response-Time", fmt.Sprintf("%d", time.Since(start).Milliseconds()))
 	w.Header().Set("Cache-Control", "public, max-age=30")
+
+	// Set cache status header if provided
+	if cacheStatus != "" {
+		w.Header().Set("X-Cache-Status", cacheStatus)
+	}
 
 	// Get request ID from context (set by chi middleware)
 	if requestID := middleware.GetReqID(r.Context()); requestID != "" {
@@ -164,5 +202,5 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 
 	h.writeResponse(w, r, http.StatusOK, map[string]interface{}{
 		"data": stats,
-	}, start)
+	}, start, "BYPASS") // Stats use MV, not sensor cache
 }

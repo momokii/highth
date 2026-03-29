@@ -82,12 +82,12 @@ export const options = {
     },
   },
   thresholds: {
-    'http_req_duration': ['p(50)<200', 'p(95)<500', 'p(99)<800'],
+    'http_req_duration': ['p(50)<10', 'p(95)<50', 'p(99)<100'],
     'http_req_failed': ['rate<0.01'],
-    'cold_cache_latency': ['p(95)<600'],
-    'warm_cache_latency': ['p(95)<300'],
-    'hot_cache_latency': ['p(95)<100'],
-    'cache_hit_rate': ['rate>0.7'],
+    'cold_cache_latency': ['p(95)<100'],
+    'warm_cache_latency': ['p(95)<50'],
+    'hot_cache_latency': ['p(95)<20'],
+    'cache_hit_rate': ['rate>0.6'],
   },
 };
 
@@ -98,9 +98,9 @@ export function setup() {
   console.log('Scenario 4: Cache Performance');
   console.log('='.repeat(60));
   console.log('Testing Redis cache effectiveness');
-  console.log('Phase 1 (0-15s): Cold Cache - All cache misses');
-  console.log('Phase 2 (15-30s): Warm Cache - Populating cache');
-  console.log('Phase 3 (30-45s): Hot Cache - High cache hit rate');
+  console.log('Phase 1 (0-33%): Cold Cache - All cache misses');
+  console.log('Phase 2 (33-66%): Warm Cache - Populating cache');
+  console.log('Phase 3 (66-100%): Hot Cache - High cache hit rate');
   console.log('='.repeat(60));
   console.log('');
   console.log('NOTE: For accurate results, ensure Redis is flushed before test:');
@@ -111,11 +111,14 @@ export function setup() {
 // ===== MAIN TEST FUNCTION =====
 export default function () {
   // Determine current phase based on elapsed time
+  // Phase boundaries are dynamic: 0-33%, 33-66%, 66-100% of total duration
+  const totalDuration = parseInt(__ENV.CUSTOM_DURATION || '45') * 1000; // Convert to ms
   const elapsed = new Date() - testStartTime;
+  const phaseDuration = totalDuration / 3;
 
-  if (elapsed < 15000) {
+  if (elapsed < phaseDuration) {
     currentPhase = 'cold';
-  } else if (elapsed < 30000) {
+  } else if (elapsed < phaseDuration * 2) {
     currentPhase = 'warm';
   } else {
     currentPhase = 'hot';

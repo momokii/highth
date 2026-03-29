@@ -98,16 +98,6 @@ function getSensorReadings(deviceId, options = {}) {
     return http.get(url, params);
 }
 
-function getDeviceHourlyStats(deviceId, hours = 24) {
-    // Note: This endpoint may not exist, using mock response
-    return {
-        status: 200,
-        timings: { duration: 50 },
-        body: '[]',
-        json: () => []
-    };
-}
-
 // ===== CUSTOM METRICS =====
 const oneHourLatency = new Trend('time_range_1h_latency');
 const twentyFourHourLatency = new Trend('time_range_24h_latency');
@@ -127,11 +117,11 @@ export const options = {
     },
   },
   thresholds: {
-    'http_req_duration': ['p(50)<200', 'p(95)<500', 'p(99)<800'],
+    'http_req_duration': ['p(50)<50', 'p(95)<200', 'p(99)<500'],
     'http_req_failed': ['rate<0.01'],
-    'time_range_1h_latency': ['p(95)<300'],
-    'time_range_24h_latency': ['p(95)<500'],
-    'time_range_7d_latency': ['p(95)<700'],
+    'time_range_1h_latency': ['p(95)<50'],
+    'time_range_24h_latency': ['p(95)<200'],
+    'time_range_7d_latency': ['p(95)<500'],
   },
 };
 
@@ -200,12 +190,6 @@ export default function () {
       }
     },
   });
-
-  // 20% chance to query hourly stats
-  if (Math.random() < 0.2) {
-    const hours = Math.floor(parseInt(timeRange.duration) / 24) || 1;
-    getDeviceHourlyStats(deviceId, hours * 24);
-  }
 
   sleep(Math.random() * 0.2 + 0.1);
 }

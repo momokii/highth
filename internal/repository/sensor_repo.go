@@ -60,7 +60,9 @@ func New(cfg Config) (*SensorRepository, error) {
 // ordered by timestamp DESC (newest first).
 // If deviceID is empty, returns readings from all devices.
 // If readingType is specified, filters by that type.
-func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int, readingType string) ([]model.SensorReading, error) {
+// If from is non-nil, filters to timestamps >= from.
+// If to is non-nil, filters to timestamps <= to.
+func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int, readingType string, from, to *time.Time) ([]model.SensorReading, error) {
 	var query string
 	var args []interface{}
 	var argIdx int = 1
@@ -71,16 +73,42 @@ func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int
 		FROM sensor_readings
 	`
 
-	// Add WHERE clause only if device_id is provided
+	// Add WHERE clause(s)
+	whereAdded := false
 	if deviceID != "" {
 		baseQuery += fmt.Sprintf(" WHERE device_id = $%d", argIdx)
 		args = append(args, deviceID)
+		argIdx++
+		whereAdded = true
+	}
+
+	// Add from timestamp filter
+	if from != nil {
+		if whereAdded {
+			baseQuery += fmt.Sprintf(" AND timestamp >= $%d", argIdx)
+		} else {
+			baseQuery += fmt.Sprintf(" WHERE timestamp >= $%d", argIdx)
+			whereAdded = true
+		}
+		args = append(args, *from)
+		argIdx++
+	}
+
+	// Add to timestamp filter
+	if to != nil {
+		if whereAdded {
+			baseQuery += fmt.Sprintf(" AND timestamp <= $%d", argIdx)
+		} else {
+			baseQuery += fmt.Sprintf(" WHERE timestamp <= $%d", argIdx)
+			whereAdded = true
+		}
+		args = append(args, *to)
 		argIdx++
 	}
 
 	// Add reading_type filter if specified
 	if readingType != "" {
-		if deviceID != "" {
+		if whereAdded {
 			query = baseQuery + fmt.Sprintf(" AND reading_type = $%d", argIdx)
 		} else {
 			query = baseQuery + fmt.Sprintf(" WHERE reading_type = $%d", argIdx)

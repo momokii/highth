@@ -96,11 +96,13 @@ function getHealth() {
 }
 
 function getSensorReadings(deviceId, options = {}) {
-    const { type = null, limit = 100 } = options;
+    const { type = null, from = null, to = null, limit = 100 } = options;
 
     const queryParams = [];
     queryParams.push(`device_id=${deviceId}`);
     if (type) queryParams.push(`type=${type}`);
+    if (from) queryParams.push(`from=${encodeURIComponent(from)}`);
+    if (to) queryParams.push(`to=${encodeURIComponent(to)}`);
     queryParams.push(`limit=${limit}`);
 
     const queryString = queryParams.join('&');
@@ -114,26 +116,13 @@ function getSensorReadings(deviceId, options = {}) {
     return http.get(url, params);
 }
 
-function getDeviceStats(deviceId) {
-    // Note: This endpoint may not exist, using mock response
-    // Mock a proper k6 response object with timings
-    return {
-        status: 200,
-        timings: { duration: 100 },
-        body: '{"device_id":"' + deviceId + '", "reading_count": 1000}',
-        json: () => ({ device_id: deviceId, reading_count: 1000 })
+function getStats() {
+    const url = `${BASE_URL}/api/v1/stats`;
+    const params = {
+        headers: { 'Accept': 'application/json' },
+        tags: { name: 'GetStats' },
     };
-}
-
-function getGlobalStats() {
-    // Note: This endpoint may not exist, using mock response
-    // Mock a proper k6 response object with timings
-    return {
-        status: 200,
-        timings: { duration: 50 },
-        body: '{"total_devices": 100, "total_readings": 100000}',
-        json: () => ({ total_devices: 100, total_readings: 100000 })
-    };
+    return http.get(url, params);
 }
 
 // ===== CUSTOM METRICS =====
@@ -165,11 +154,11 @@ export const options = {
     },
   },
   thresholds: {
-    'http_req_duration': ['p(50)<150', 'p(95)<400', 'p(99)<600'],
+    'http_req_duration': ['p(50)<20', 'p(95)<100', 'p(99)<300'],
     'http_req_failed': ['rate<0.02'],
-    'health_check_latency': ['p(95)<100'],
-    'stats_query_latency': ['p(95)<300'],
-    'sensor_readings_latency': ['p(95)<500'],
+    'health_check_latency': ['p(95)<20'],
+    'stats_query_latency': ['p(95)<100'],
+    'sensor_readings_latency': ['p(95)<200'],
   },
 };
 
@@ -223,12 +212,7 @@ export default function () {
       break;
 
     case 'stats':
-      if (Math.random() < 0.7) {
-        const deviceId = zipfDevice();
-        response = getDeviceStats(deviceId);
-      } else {
-        response = getGlobalStats();
-      }
+      response = getStats();
       statsLatency.add(Date.now() - startTime);
       statsRate.add(1);
       check(response, {
@@ -241,9 +225,13 @@ export default function () {
       const deviceId = zipfDevice();
       const readingType = randomReadingType();
       const limit = randomLimit();
+      const from = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+      const to = new Date().toISOString();
 
       response = getSensorReadings(deviceId, {
         type: readingType,
+        from: from,
+        to: to,
         limit: limit,
       });
       sensorReadingsLatency.add(Date.now() - startTime);

@@ -147,13 +147,13 @@ export const options = {
   },
   thresholds: {
     'http_req_duration': [
-      'p(50)<300',
-      'p(95)<500',
-      'p(99)<800',
+      'p(50)<10',
+      'p(95)<50',
+      'p(99)<100',
     ],
     'http_req_failed': ['rate<0.01'],
-    'hot_device_latency': ['p(95)<200'],
-    'cold_device_latency': ['p(95)<400'],
+    'hot_device_latency': ['p(95)<20'],
+    'cold_device_latency': ['p(95)<50'],
   },
 };
 
@@ -176,14 +176,10 @@ export default function () {
 
   const readingType = randomReadingType();
   const limit = randomLimit();
-  const from = timeAgo('1h');
-  const to = new Date().toISOString();
 
   const startTime = Date.now();
   const response = getSensorReadings(deviceId, {
     type: readingType,
-    from: from,
-    to: to,
     limit: limit,
   });
   const duration = Date.now() - startTime;

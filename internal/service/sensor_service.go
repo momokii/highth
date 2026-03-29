@@ -47,47 +47,54 @@ func New(repo *repository.SensorRepository, cache *cache.RedisCache, cfg Config)
 // 3. Populate cache for next request
 //
 // Results are cached for 30 seconds by default.
-func (s *SensorService) GetSensorReadings(ctx context.Context, deviceID string, limit int, readingType string) ([]model.SensorReading, error) {
+// Returns (cacheStatus, readings, error) where cacheStatus is "HIT", "MISS", or "".
+func (s *SensorService) GetSensorReadings(ctx context.Context, deviceID string, limit int, readingType string, from, to *time.Time) (string, []model.SensorReading, error) {
 	// Validate input
 	if !s.isValidDeviceID(deviceID) {
-		return nil, fmt.Errorf("%w: invalid device_id", ErrInvalidParameter)
+		return "", nil, fmt.Errorf("%w: invalid device_id", ErrInvalidParameter)
 	}
 
 	if limit < 1 || limit > 500 {
-		return nil, fmt.Errorf("%w: limit must be between 1 and 500", ErrInvalidParameter)
+		return "", nil, fmt.Errorf("%w: limit must be between 1 and 500", ErrInvalidParameter)
 	}
 
 	if readingType != "" && !s.isValidReadingType(readingType) {
-		return nil, fmt.Errorf("%w: invalid reading_type", ErrInvalidParameter)
+		return "", nil, fmt.Errorf("%w: invalid reading_type", ErrInvalidParameter)
 	}
 
 	// Check cache first if enabled
 	if s.cache != nil && s.cache.IsEnabled() {
-		key := s.cacheKey(deviceID, limit, readingType)
+		key := s.cacheKey(deviceID, limit, readingType, from, to)
 		var cached []model.SensorReading
 		if err := s.cache.Get(ctx, key, &cached); err == nil {
-			return cached, nil
+			return "HIT", cached, nil
 		}
 	}
 
 	// Cache miss - query database
-	readings, err := s.repo.Query(ctx, deviceID, limit, readingType)
+	readings, err := s.repo.Query(ctx, deviceID, limit, readingType, from, to)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query sensor readings: %w", err)
+		return "", nil, fmt.Errorf("failed to query sensor readings: %w", err)
 	}
 
-	// Empty result for valid device_id means device not found
+	// Empty result handling
+	// If no time filters specified, empty result means device has no data at all -> 404
+	// If time filters are specified, empty result means no data in time window -> 200 with empty array
 	if len(readings) == 0 {
-		return nil, fmt.Errorf("%w: no readings found for device_id: %s", ErrDeviceNotFound, deviceID)
+		if from == nil && to == nil {
+			return "", nil, fmt.Errorf("%w: no readings found for device_id: %s", ErrDeviceNotFound, deviceID)
+		}
+		// Time-filtered query with no results - return empty array instead of 404
+		return "MISS", []model.SensorReading{}, nil
 	}
 
 	// Populate cache (fire and forget - don't fail if cache is down)
 	if s.cache != nil && s.cache.IsEnabled() {
-		key := s.cacheKey(deviceID, limit, readingType)
+		key := s.cacheKey(deviceID, limit, readingType, from, to)
 		_ = s.cache.Set(ctx, key, readings)
 	}
 
-	return readings, nil
+	return "MISS", readings, nil
 }
 
 // isValidDeviceID checks if the device ID is valid.
@@ -122,12 +129,21 @@ func (s *SensorService) isValidReadingType(readingType string) bool {
 }
 
 // cacheKey generates a consistent cache key for sensor readings.
-// Format: sensor:{device_id}:readings:{limit}[:{reading_type}]
-func (s *SensorService) cacheKey(deviceID string, limit int, readingType string) string {
-	if readingType != "" {
-		return fmt.Sprintf("sensor:%s:readings:%d:%s", deviceID, limit, readingType)
+// Format: sensor:{device_id}:readings:{limit}[:{reading_type}]:{from_unix}:{to_unix}
+// Time ranges are included as Unix timestamps if specified.
+func (s *SensorService) cacheKey(deviceID string, limit int, readingType string, from, to *time.Time) string {
+	var fromStr, toStr string
+	if from != nil {
+		fromStr = fmt.Sprintf(":%d", from.Unix())
 	}
-	return fmt.Sprintf("sensor:%s:readings:%d", deviceID, limit)
+	if to != nil {
+		toStr = fmt.Sprintf(":%d", to.Unix())
+	}
+
+	if readingType != "" {
+		return fmt.Sprintf("sensor:%s:readings:%d:%s%s%s", deviceID, limit, readingType, fromStr, toStr)
+	}
+	return fmt.Sprintf("sensor:%s:readings:%d%s%s", deviceID, limit, fromStr, toStr)
 }
 
 // GetStats returns database statistics from the materialized view.

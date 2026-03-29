@@ -73,7 +73,6 @@ func main() {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Timeout(cfg.RequestTimeout))
-	r.Use(middleware.AllowContentType("application/json"))
 	r.Use(higthmiddleware.GzipMiddleware)
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
 
