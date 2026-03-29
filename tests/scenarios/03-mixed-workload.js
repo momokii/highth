@@ -189,6 +189,11 @@ if (__ENV.CUSTOM_DURATION) {
     });
 }
 
+// Apply custom VUs if provided
+if (__ENV.CUSTOM_VUS) {
+    options.scenarios.mixed_workload.maxVUs = parseInt(__ENV.CUSTOM_VUS);
+}
+
 // ===== SETUP FUNCTION =====
 export function setup() {
   console.log('='.repeat(60));

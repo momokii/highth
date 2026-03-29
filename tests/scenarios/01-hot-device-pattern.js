@@ -141,7 +141,7 @@ export const options = {
       timeUnit: '1s',
       duration: __ENV.CUSTOM_DURATION || '30s',
       preAllocatedVUs: 10,
-      maxVUs: 50,
+      maxVUs: parseInt(__ENV.CUSTOM_VUS) || 50,
       startTime: '0s',
     },
   },

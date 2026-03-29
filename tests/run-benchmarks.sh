@@ -112,6 +112,10 @@ parse_args() {
                 TARGET_URL="$2"
                 shift 2
                 ;;
+            --vus)
+                VUS="$2"
+                shift 2
+                ;;
             --list|-l)
                 LIST_ONLY=true
                 shift
@@ -142,25 +146,75 @@ parse_args() {
 }
 
 show_help() {
-    cat << EOF
-Usage: $(basename "$0") [OPTIONS]
+    cat << 'EOF'
+Usage: run-benchmarks.sh [OPTIONS]
 
-Options:
+TEST SCENARIOS:
+  hot          Hot Device Pattern
+                 Simulates Zipf-distributed IoT traffic (20% of devices receive 80% of traffic).
+                 Tests caching effectiveness under uneven load patterns.
+                 Executor: constant-arrival-rate | Default RPS: 50 | VUs: 10-50
+
+  time-range   Time Range Queries
+                 Tests dashboard-style queries with varying time windows (1h, 24h, 7d).
+                 Validates materialized view performance for different data volumes.
+                 Executor: constant-arrival-rate | Default RPS: 30 | VUs: 10-40
+
+  mixed        Mixed Workload
+                 Realistic API usage mix: 10% health checks, 20% stats queries, 70% readings.
+                 Uses ramping-arrival-rate to simulate increasing/decreasing load.
+                 Executor: ramping-arrival-rate | RPS: 10-100 ramp | VUs: 10-100
+
+  cache        Cache Performance
+                 Three-phase Redis cache effectiveness test (cold/warm/hot).
+                 Measures cache hit rate and latency improvements as cache warms.
+                 Executor: constant-arrival-rate | Default RPS: 50 | VUs: 10-50
+
+PARAMETERS:
   -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache)
-  -r, --rps <number>        Requests per second (default: 50)
-  -d, --duration <time>     Test duration (default: 2m)
+  -r, --rps <number>        Requests per second for constant-arrival-rate scenarios
+  -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)
   -u, --target-url <url>    API endpoint to test (default: http://localhost:8080)
-  -l, --list                List available scenarios
-  --skip-setup              Skip service health checks
-  -v, --verbose             Enable verbose output
+  --vus <number>            Maximum virtual users (maxVUs). preAllocatedVUs stays at 10.
   --with-html-report        Generate HTML report alongside JSON output
+  --skip-setup              Skip service health checks before running tests
+  -l, --list                List available scenarios
+  -v, --verbose             Enable verbose output (show detailed metrics after each test)
   -h, --help                Show this help message
 
-Examples:
-  $(basename "$0")                          # Run all scenarios
-  $(basename "$0") --scenario hot           # Run hot device pattern test
-  $(basename "$0") --rps 100 --duration 5m  # Custom load test
-  $(basename "$0") --list                   # List scenarios
+VUs VS RPS:
+  VUs (Virtual Users) are the maximum concurrent connections k6 will open.
+  RPS (Requests Per Second) is the target arrival rate.
+
+  k6 automatically manages actual concurrency between preAllocatedVUs and maxVUs.
+  If maxVUs is too low for the requested RPS, k6 drops iterations (check
+  'dropped_iterations' in the report). If VUs are excessively high relative to
+  RPS, connections idle and waste resources.
+
+  Recommended:
+  - maxVUs >= RPS * 1.5 to avoid dropped iterations
+  - maxVUs <= RPS * 3 to avoid idle connections
+
+  Example: For 100 RPS, set maxVUs between 150-300.
+
+EXAMPLES:
+  # Run all scenarios with defaults
+  run-benchmarks.sh
+
+  # Run a specific scenario
+  run-benchmarks.sh --scenario hot
+
+  # Custom load with HTML report
+  run-benchmarks.sh --scenario hot --rps 100 --duration 5m --with-html-report
+
+  # High concurrency test with custom VUs
+  run-benchmarks.sh --scenario mixed --rps 200 --vus 300
+
+  # Test different endpoint with verbose output
+  run-benchmarks.sh --target-url http://staging.example.com --verbose
+
+  # Quick smoke test (short duration, low RPS)
+  run-benchmarks.sh --scenario cache --duration 30s --rps 20
 
 EOF
 }
@@ -254,6 +308,9 @@ run_scenario() {
     if [ -n "$DURATION" ]; then
         echo "  Duration:    $DURATION"
     fi
+    if [ -n "$VUS" ]; then
+        echo "  Custom VUs:  $VUS"
+    fi
     echo "  Output:      $output_file"
     echo ""
 
@@ -272,19 +329,31 @@ run_scenario() {
         -e TARGET_URL="$TARGET_URL" \
         -e CUSTOM_RPS="$RPS" \
         -e CUSTOM_DURATION="$DURATION" \
+        -e CUSTOM_VUS="$VUS" \
         grafana/k6:latest run \
         $k6_verbose_flag \
-        --summary-export="/results/summary_${timestamp}.json" \
+        --summary-trend-stats="avg,min,med,max,p(90),p(95),p(99)" \
+        --summary-export="/results/${scenario_name}_${timestamp}.json" \
         "/tests/scenarios/$scenario_file"
 
     local exit_code=$?
 
+    # Inject scenario metadata into the JSON summary
+    local summary_file="$RESULTS_DIR/${scenario_name}_${timestamp}.json"
+    if [ -f "$summary_file" ] && command -v jq &> /dev/null; then
+        jq --arg scenario "$scenario_name" \
+           --arg scenario_file "$scenario_file" \
+           --arg timestamp "$timestamp" \
+           '. + {scenario: $scenario, scenario_file: $scenario_file, timestamp: $timestamp}' \
+           "$summary_file" > "${summary_file}.tmp" && mv "${summary_file}.tmp" "$summary_file"
+    fi
+
     # Track result file for HTML report generation
-    RESULT_FILES+=("$RESULTS_DIR/summary_${timestamp}.json")
+    RESULT_FILES+=("$summary_file")
 
     # Show parsed metrics summary in verbose mode
     if [ "$VERBOSE" = true ] && command -v jq &> /dev/null; then
-        parse_k6_summary "$RESULTS_DIR/summary_${timestamp}.json"
+        parse_k6_summary "$summary_file"
     fi
 
     if [ $exit_code -eq 0 ]; then
