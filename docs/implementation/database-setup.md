@@ -330,6 +330,8 @@ volumes:
 | `bgwriter_lru_maxpages` | 100 | Max buffers flushed per round (limits I/O burst size) |
 
 > **Note:** These parameters are tuned for an 8GB RAM system with SSD storage. For different hardware, adjust based on available RAM and storage characteristics. For detailed explanations of each parameter including trade-offs, see [high-throughput-guide/01-postgresql-setup.md](../high-throughput-guide/01-postgresql-setup.md#parameter-explanations).
+>
+> **Configuring for your hardware?** If your system has different RAM, CPU cores, or storage type, see [Configuration Adjustment Guide](../high-throughput-guide/05-configuration-adjustment-guide.md) for hardware-specific presets (4GB, 8GB, 16GB, 32GB, 64GB RAM) and parameter adjustment formulas.
 
 ---
 

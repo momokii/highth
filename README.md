@@ -548,6 +548,8 @@ The `docker-compose.yml` includes 14 performance-tuned PostgreSQL parameters opt
 - **Connections**: `max_connections=200`
 
 > **For detailed explanation of each parameter and why these values were chosen**, see [docs/high-throughput-guide/01-postgresql-setup.md](docs/high-throughput-guide/01-postgresql-setup.md#parameter-explanations).
+>
+> **Configuring for your hardware?** The default configuration is tuned for 8GB RAM + SSD + 8 cores. If your machine has different specs, see [Configuration Adjustment Guide](docs/high-throughput-guide/05-configuration-adjustment-guide.md) for hardware presets and parameter adjustment instructions.
 
 **Step 3: Initialize Database**
 

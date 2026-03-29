@@ -450,6 +450,8 @@ volumes:
 ```
 
 > **Note:** The PostgreSQL command above includes 14 performance-tuned parameters for high-throughput time-series workloads on an 8GB RAM system. For detailed explanation of each parameter and why these values were chosen, see [high-throughput-guide/01-postgresql-setup.md](../high-throughput-guide/01-postgresql-setup.md#parameter-explanations).
+>
+> **Configuring for your hardware?** The configuration is tuned for 8GB RAM + SSD + 8 cores. For systems with different specs, see [Configuration Adjustment Guide](../high-throughput-guide/05-configuration-adjustment-guide.md) which includes hardware-specific presets for 4GB, 16GB, 32GB, and 64GB RAM systems.
 
 
 ---

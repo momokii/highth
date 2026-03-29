@@ -645,6 +645,42 @@ REINDEX TABLE CONCURRENTLY entity_readings;
 7. **Version your migrations**: Never make manual schema changes in production
 8. **Test with production data volume**: Performance at 1K rows != performance at 50M rows
 
+---
+
+## Recommendation Boundary
+
+### Use This Configuration As-Is
+
+The default configuration (shown above) works well for:
+- **Read-heavy / read-mostly workloads** where queries filter by a known identifier and order by timestamp
+- **Append-only time-series data** (IoT, logs, events, metrics)
+- **8GB RAM + SSD + 8 CPU cores** hardware (or larger)
+- **Point queries with small result sets** (LIMIT 10-100)
+
+### Modify Before Using
+
+| Condition | Recommended Changes |
+|-----------|-------------------|
+| **HDD storage** | Set `random_page_cost=4.0`, `effective_io_concurrency=2` |
+| **< 8GB RAM** | Scale `shared_buffers` to 25% of actual RAM, scale `effective_cache_size` to 75% |
+| **< 4GB RAM** | Reduce `shared_buffers` to 512MB-1GB, reduce `work_mem` to 4MB |
+| **Write-heavy OLTP** (many UPDATEs/DELETEs) | Increase `wal_buffers` to 64MB, increase `bgwriter_lru_maxpages` to 500 |
+| **Analytical / reporting queries** | Increase `work_mem` to 64-256MB, increase `max_parallel_workers_per_gather` to 4 |
+| **Multiple API instances** | Add PgBouncer in transaction mode between app and PG |
+| **NVMe storage** | Lower `random_page_cost` to 1.0, increase `effective_io_concurrency` to 200-500 |
+
+### Do NOT Use This Configuration For
+
+- **Systems with < 2GB RAM** (shared_buffers alone requires 2GB minimum)
+- **HDD-based storage** without changing `random_page_cost` and `effective_io_concurrency`
+- **Shared multi-tenant databases** where one tenant's analytical query could monopolize resources
+
+### Need Hardware-Specific Presets?
+
+For ready-to-use configurations for 4GB, 8GB, 16GB, 32GB, and 64GB RAM systems, see **[Configuration Adjustment Guide](./05-configuration-adjustment-guide.md#hardware-presets)**.
+
+---
+
 ## Next Steps
 
 - [Golang API Setup](./02-golang-api-setup.md) - Configure the application layer

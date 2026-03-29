@@ -701,6 +701,55 @@ ON sensor_readings USING BRIN (timestamp);
 7. **Validate with k6** before production deployment
 8. **Iterate on optimizations** based on test results
 
+---
+
+## Recommendation Boundary
+
+### Hardware-Specific Configuration Required?
+
+This guide uses default configuration tuned for **8GB RAM + SSD + 8 cores**. If your system has different specifications, you'll need to adjust the PostgreSQL parameters.
+
+**Quick check:**
+```bash
+# Check your RAM
+free -h    # Linux
+sysctl hw.memsize | awk '{print $2/1024/1024/1024 " GB"}'    # macOS
+
+# Check your CPU cores
+nproc    # Linux
+sysctl -n hw.ncpu    # macOS
+
+# Check storage type (0 = SSD/NVMe, 1 = HDD)
+cat /sys/block/sda/queue/rotational    # Linux
+diskutil info disk0 | grep "Solid State"    # macOS
+```
+
+### When to Use Default Configuration
+
+Use as-is for:
+- **8GB RAM + SSD + 4-8 CPU cores** (close to target specs)
+- **Read-heavy workloads** (point queries with small result sets)
+- **Append-only time-series data** (logs, events, metrics, IoT)
+
+### When to Modify
+
+| Your Specs | Action |
+|------------|--------|
+| **4GB RAM** | Use [4GB preset](./05-configuration-adjustment-guide.md#preset-4gb-ram--2-cores--ssd) |
+| **16GB+ RAM** | Use [16GB/32GB/64GB preset](./05-configuration-adjustment-guide.md#hardware-presets) |
+| **HDD storage** | Must change `random_page_cost=4.0`, `effective_io_concurrency=2` |
+| **Write-heavy** (many UPDATEs) | Increase `wal_buffers=64MB`, `bgwriter_lru_maxpages=500` |
+| **Analytical queries** | Increase `work_mem=64-256MB`, `max_parallel_workers_per_gather=4` |
+
+### Need Detailed Adjustment Instructions?
+
+See **[Configuration Adjustment Guide](./05-configuration-adjustment-guide.md)** for:
+- Hardware-specific presets (4GB, 8GB, 16GB, 32GB, 64GB)
+- Parameter-by-parameter adjustment formulas
+- Schema/workload-specific tuning
+
+---
+
 ## Next Steps
 
 - [Example Schema](./examples/schema.sql) - Complete schema example

@@ -30,6 +30,7 @@ This guide demonstrates how to architect and implement a high-throughput data sy
 2. **[Golang API Setup](./02-golang-api-setup.md)** - API layer and connection pooling
 3. **[Performance Targets](./03-performance-targets.md)** - Metrics and validation
 4. **[General Setup Guide](./04-general-setup-guide.md)** - Adapt to your use case
+5. **[Configuration Adjustment Guide](./05-configuration-adjustment-guide.md)** - Adjust for your hardware
 
 ## Target Audience
 
