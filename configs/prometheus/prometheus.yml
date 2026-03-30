@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'highth-api'
+    static_configs:
+      - targets: ['api:8080']
+    metrics_path: /metrics
+    scrape_interval: 5s
+
+  - job_name: 'highth-postgres'
+    static_configs:
+      - targets: ['highth-postgres-exporter:9187']
+    scrape_interval: 10s
+
+  - job_name: 'highth-redis'
+    static_configs:
+      - targets: ['highth-redis-exporter:9121']
+    scrape_interval: 10s

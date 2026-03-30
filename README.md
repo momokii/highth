@@ -1239,6 +1239,83 @@ docker-compose restart postgres
 
 ---
 
+## Monitoring Stack
+
+The project includes a Prometheus + Grafana monitoring stack for visualizing live metrics during benchmark runs.
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   k6 Load Test  │────▶│  Go API (8080)  │
+└─────────────────┘     └────────┬────────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    ▼             ▼             ▼
+            ┌───────────┐  ┌───────────┐  ┌───────────┐
+            │ Prometheus│  │PostgreSQL │  │   Redis   │
+            │  (9090)   │  │  (5434)   │  │  (6380)   │
+            └─────┬─────┘  └─────┬─────┘  └─────┬─────┘
+                  │             │             │
+                  └─────────────┼─────────────┘
+                                ▼
+                         ┌─────────────────┐
+                         │    Grafana      │
+                         │    (3000)       │
+                         └─────────────────┘
+```
+
+### Startup
+
+**Important**: The main application stack must be running first.
+
+```bash
+# Start main stack (if not already running)
+docker compose up -d
+
+# Start monitoring stack
+docker compose -f compose.monitoring.yml up -d
+```
+
+### Access
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Grafana | http://localhost:3000 | admin/admin |
+| Prometheus | http://localhost:9090 | N/A (read-only) |
+
+### Dashboards
+
+Grafana comes pre-provisioned with 4 dashboards:
+
+| Dashboard | Description |
+|-----------|-------------|
+| **Experiment Load** | Combined view - API latency, PostgreSQL cache hit ratio, Redis ops/sec |
+| **API Overview** | Request rate, latency percentiles (p50/p95/p99), error rate, cache hit rate |
+| **PostgreSQL Overview** | Active connections, transactions/sec, buffer cache hit ratio, query duration |
+| **Redis Overview** | Connected clients, ops/sec, hit/miss rate, memory usage |
+
+**Recommended**: Open the **"Experiment Load"** dashboard during a benchmark run to see live metrics across all services.
+
+### Shutdown
+
+```bash
+# Stop monitoring stack only
+docker compose -f compose.monitoring.yml down
+
+# Stop everything
+docker compose -f compose.monitoring.yml down
+docker compose down
+```
+
+### Documentation
+
+See [MONITORING.md](MONITORING.md) for detailed documentation on:
+- Dashboard panel descriptions
+- Prometheus query examples
+- Metrics reference
+- Troubleshooting
+
 ## Materialized Views
 
 ### What Are Materialized Views?

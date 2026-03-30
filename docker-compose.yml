@@ -97,3 +97,4 @@ volumes:
 networks:
   highth-network:
     driver: bridge
+    external: true

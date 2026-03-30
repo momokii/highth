@@ -9,7 +9,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/kelanach/higth/internal/middleware"
 	"github.com/kelanach/higth/internal/service"
 )
 
@@ -99,6 +100,14 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Record cache hit/miss metrics
+	switch cacheStatus {
+	case "HIT":
+		middleware.CacheHitsTotal.Inc()
+	case "MISS":
+		middleware.CacheMissesTotal.Inc()
+	}
+
 	// Return response
 	h.writeResponse(w, r, http.StatusOK, map[string]interface{}{
 		"data": readings,
@@ -136,7 +145,7 @@ func (h *SensorHandler) writeResponse(w http.ResponseWriter, r *http.Request, st
 	}
 
 	// Get request ID from context (set by chi middleware)
-	if requestID := middleware.GetReqID(r.Context()); requestID != "" {
+	if requestID := chimiddleware.GetReqID(r.Context()); requestID != "" {
 		w.Header().Set("X-Request-ID", requestID)
 	}
 
@@ -150,7 +159,7 @@ func (h *SensorHandler) writeError(w http.ResponseWriter, r *http.Request, statu
 	w.Header().Set("X-Response-Time", fmt.Sprintf("%d", time.Since(start).Milliseconds()))
 
 	// Add request ID header if available
-	if requestID := middleware.GetReqID(r.Context()); requestID != "" {
+	if requestID := chimiddleware.GetReqID(r.Context()); requestID != "" {
 		w.Header().Set("X-Request-ID", requestID)
 	}
 
@@ -163,7 +172,7 @@ func (h *SensorHandler) writeError(w http.ResponseWriter, r *http.Request, statu
 	}
 
 	// Add request ID to response body if available
-	if requestID := middleware.GetReqID(r.Context()); requestID != "" {
+	if requestID := chimiddleware.GetReqID(r.Context()); requestID != "" {
 		errorResp["error"].(map[string]interface{})["request_id"] = requestID
 	}
 

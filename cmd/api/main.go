@@ -75,6 +75,7 @@ func main() {
 	r.Use(middleware.Timeout(cfg.RequestTimeout))
 	r.Use(higthmiddleware.GzipMiddleware)
 	r.Use(middleware.SetHeader("Content-Type", "application/json"))
+	r.Use(higthmiddleware.MetricsMiddleware)
 
 	// Routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -86,6 +87,11 @@ func main() {
 	r.Get("/health", healthHandler.GetHealth)
 	r.Get("/health/ready", healthHandler.GetReadiness)
 	r.Get("/health/live", healthHandler.GetLiveness)
+
+	// Metrics endpoint for Prometheus
+	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		higthmiddleware.MetricsHandler().ServeHTTP(w, r)
+	})
 
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)

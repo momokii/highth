@@ -45,6 +45,12 @@ func (w *gzipResponseWriter) Close() {
 // It skips compression for responses that are already compressed (images, videos, etc.)
 func GzipMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip compression for /metrics endpoint (Prometheus requires plain text)
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		// Check if client accepts gzip encoding
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 			next.ServeHTTP(w, r)
@@ -79,6 +85,12 @@ func GzipMiddleware(next http.Handler) http.Handler {
 func GzipLevelMiddleware(level int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip compression for /metrics endpoint (Prometheus requires plain text)
+			if r.URL.Path == "/metrics" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Check if client accepts gzip encoding
 			if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 				next.ServeHTTP(w, r)
