@@ -91,7 +91,7 @@ services:
     environment:
       DATA_SOURCE_NAME: postgres://sensor_user:${POSTGRES_PASSWORD:-sensor_password}@highth-postgres:5432/sensor_db?sslmode=disable
       PG_EXPORTER_DISABLE_DEFAULT_METRICS: "false"
-      PG_EXPORTER_DISABLE_SETTINGS_METRICS: "true"
+      PG_EXPORTER_DISABLE_SETTINGS_METRICS: "false"
       PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
       PG_EXPORTER_EXCLUDE_DATABASES: "template0,template1"
     # depends_on:
