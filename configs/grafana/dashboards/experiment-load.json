@@ -2,10 +2,17 @@
   "uid": "experiment-load",
   "title": "Experiment Load - Full Stack Overview",
   "description": "Showcase dashboard combining API, PostgreSQL, and Redis metrics for load testing and experimentation with the Higth IoT monitoring stack",
-  "tags": ["experiment", "load", "api", "postgres", "redis", "highth"],
+  "tags": [
+    "experiment",
+    "load",
+    "api",
+    "postgres",
+    "redis",
+    "highth"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -34,7 +41,7 @@
     {
       "id": 1,
       "title": "API Request Rate",
-      "description": "Total HTTP request rate across all endpoints",
+      "description": "Total HTTP requests per second across all API endpoints. During load testing, this should match the target RPS from your test scenario. A gap between target and actual may indicate the API is saturated.",
       "type": "stat",
       "gridPos": {
         "h": 8,
@@ -68,7 +75,9 @@
         "justifyMode": "auto",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -77,7 +86,7 @@
     {
       "id": 2,
       "title": "API Latency p95",
-      "description": "95th percentile response time across all endpoints",
+      "description": "95th percentile response time across all endpoints during the load test. Compare against your k6 thresholds (e.g., p95 < 500ms). If this exceeds the target, the system is struggling under load.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -107,7 +116,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -120,7 +132,7 @@
     {
       "id": 3,
       "title": "PostgreSQL Active Connections",
-      "description": "Current number of active backend connections",
+      "description": "Backend connections to PostgreSQL per database during the test. Watch for connection count approaching max_connections, which would cause connection errors.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -150,7 +162,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -163,7 +178,7 @@
     {
       "id": 4,
       "title": "PostgreSQL Cache Hit Ratio",
-      "description": "Percentage of block reads served from cache vs disk",
+      "description": "Buffer cache efficiency during the test. Under heavy load, this may drop as the working set exceeds shared_buffers. A significant drop indicates the database is reading more from disk, slowing all queries.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -177,7 +192,7 @@
       },
       "targets": [
         {
-          "expr": "sum(pg_stat_database_blks_hit{datname=\"sensor_db\"}) / (sum(pg_stat_database_blks_hit{datname=\"sensor_db\"}) + sum(pg_stat_database_blks_read{datname=\"sensor_db\"})) * 100",
+          "expr": "sum(rate(pg_stat_database_blks_hit{datname=\"sensor_db\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{datname=\"sensor_db\"}[5m])) + sum(rate(pg_stat_database_blks_read{datname=\"sensor_db\"}[5m]))) * 100",
           "legendFormat": "cache hit ratio",
           "refId": "A"
         }
@@ -212,7 +227,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -224,7 +241,7 @@
     {
       "id": 5,
       "title": "Redis Ops/sec",
-      "description": "Number of operations processed per second by Redis",
+      "description": "Redis command throughput during the test. Should correlate with the request rate \u2014 most API requests perform at least one Redis lookup.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -254,7 +271,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -267,7 +287,7 @@
     {
       "id": 6,
       "title": "Redis Memory Usage",
-      "description": "Current memory usage of Redis",
+      "description": "Redis memory consumption during the test. Watch for approaching the 512MB limit, which triggers key eviction and cache misses.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -300,11 +320,11 @@
               },
               {
                 "color": "yellow",
-                "value": 536870912
+                "value": 394264576
               },
               {
                 "color": "red",
-                "value": 1073741824
+                "value": 436207616
               }
             ]
           },
@@ -314,7 +334,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -326,7 +348,7 @@
     {
       "id": 7,
       "title": "API Error Rate",
-      "description": "Percentage of requests returning 5xx errors",
+      "description": "Percentage of requests returning server errors during the test. Your k6 threshold is <5% error rate. Values above this indicate the system is failing under load \u2014 check for connection timeouts or database errors.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -340,7 +362,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100",
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / (sum(rate(http_requests_total[5m])) > 0) * 100",
           "legendFormat": "error rate",
           "refId": "A"
         }
@@ -379,7 +401,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -391,7 +415,7 @@
     {
       "id": 8,
       "title": "API Cache Hit Rate",
-      "description": "Percentage of cache lookups that returned a hit",
+      "description": "Cache effectiveness during the test. During cold-start phases, expect a low hit rate. During steady-state phases, the hit rate should recover to above 95%. A persistently low rate indicates the cache may not be sized correctly for the data set.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -405,7 +429,7 @@
       },
       "targets": [
         {
-          "expr": "cache_hits_total / (cache_hits_total + cache_misses_total) * 100",
+          "expr": "sum(rate(cache_hits_total[5m])) / (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m]))) * 100",
           "legendFormat": "cache hit rate",
           "refId": "A"
         }
@@ -440,7 +464,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },

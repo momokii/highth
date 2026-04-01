@@ -2,10 +2,14 @@
   "uid": "api-overview",
   "title": "API Overview",
   "description": "Go API service metrics for the Higth IoT monitoring stack",
-  "tags": ["api", "go", "highth"],
+  "tags": [
+    "api",
+    "go",
+    "highth"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -34,7 +38,7 @@
     {
       "id": 1,
       "title": "Request Rate",
-      "description": "HTTP request rate per endpoint",
+      "description": "How many HTTP requests the API is receiving per second, broken down by endpoint (e.g., /api/v1/sensors/{id}/readings). A sudden spike may indicate increased load or a misbehaving client.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -64,7 +68,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -77,7 +84,7 @@
     {
       "id": 2,
       "title": "Response Time p50",
-      "description": "50th percentile response time per endpoint",
+      "description": "The median response time \u2014 50% of all requests complete within this time. A good general indicator of typical user experience. If this rises above your target (e.g., 300ms), investigate database queries or cache health.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -107,7 +114,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -120,7 +130,7 @@
     {
       "id": 3,
       "title": "Response Time p95",
-      "description": "95th percentile response time per endpoint",
+      "description": "The 95th percentile response time \u2014 95% of requests complete within this time. This surfaces slow outliers that the median hides. If p95 is much higher than p50, a small fraction of requests are disproportionately slow.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -150,7 +160,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -163,7 +176,7 @@
     {
       "id": 4,
       "title": "Response Time p99",
-      "description": "99th percentile response time per endpoint",
+      "description": "The 99th percentile response time \u2014 nearly all requests complete within this time. Useful for identifying the worst-case latency. Consistently high p99 often indicates a specific slow query or resource contention.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -193,7 +206,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -206,7 +222,7 @@
     {
       "id": 5,
       "title": "Error Rate",
-      "description": "Percentage of requests returning 5xx errors",
+      "description": "Percentage of all requests that returned a server error (HTTP 5xx). Should be 0% under normal operation. Values above 1% warrant investigation \u2014 check application logs and database connectivity.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -220,7 +236,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / sum(rate(http_requests_total[5m])) * 100",
+          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) / (sum(rate(http_requests_total[5m])) > 0) * 100",
           "legendFormat": "error rate",
           "refId": "A"
         }
@@ -259,7 +275,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -271,7 +289,7 @@
     {
       "id": 6,
       "title": "Cache Hit Rate",
-      "description": "Percentage of cache lookups that returned a hit",
+      "description": "Of all cache lookups in the last 5 minutes, what percentage found the data in Redis (a hit) versus having to query PostgreSQL (a miss). A high hit rate (95%+) means Redis is effectively reducing database load. A low rate may indicate cache is being bypassed or keys are expiring too quickly.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -285,7 +303,7 @@
       },
       "targets": [
         {
-          "expr": "cache_hits_total / (cache_hits_total + cache_misses_total) * 100",
+          "expr": "sum(rate(cache_hits_total[5m])) / (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m]))) * 100",
           "legendFormat": "cache hit rate",
           "refId": "A"
         }
@@ -320,7 +338,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -332,7 +352,7 @@
     {
       "id": 7,
       "title": "In-Flight Requests",
-      "description": "Current number of requests being processed",
+      "description": "The number of requests currently being processed by the API at this exact moment. This is a real-time gauge \u2014 if it stays consistently high, the API may be overloaded and requests will start queuing.",
       "type": "stat",
       "gridPos": {
         "h": 8,
@@ -383,7 +403,9 @@
         "justifyMode": "auto",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }

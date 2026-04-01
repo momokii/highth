@@ -2,10 +2,14 @@
   "uid": "redis-overview",
   "title": "Redis Overview",
   "description": "Redis cache metrics from redis_exporter for the Higth IoT monitoring stack",
-  "tags": ["redis", "cache", "highth"],
+  "tags": [
+    "redis",
+    "cache",
+    "highth"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -34,7 +38,7 @@
     {
       "id": 1,
       "title": "Connected Clients",
-      "description": "Number of client connections to Redis (excluding replicas)",
+      "description": "The number of application clients currently connected to Redis. Excludes replica connections. A sudden increase may indicate a connection leak in the application.",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -85,7 +89,9 @@
         "justifyMode": "auto",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -94,7 +100,7 @@
     {
       "id": 2,
       "title": "Connected Clients Over Time",
-      "description": "Historical trend of connected Redis clients",
+      "description": "Historical trend of Redis client connections. Useful for spotting connection leaks (steadily increasing line) or correlating client counts with load test phases.",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -124,7 +130,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -137,7 +146,7 @@
     {
       "id": 3,
       "title": "Operations Per Second",
-      "description": "Number of operations processed per second",
+      "description": "The number of Redis commands being executed per second. This reflects the actual workload on Redis \u2014 a direct indicator of how much the cache is being used.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -167,7 +176,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -180,7 +192,7 @@
     {
       "id": 4,
       "title": "Hit Rate",
-      "description": "Percentage of key lookups that found the key in cache",
+      "description": "Of all key lookups in the last 5 minutes, what percentage found the key in Redis (a hit) versus not finding it (a miss). A high hit rate means the cache is working well. A low rate means the application is frequently falling through to the database.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -194,7 +206,7 @@
       },
       "targets": [
         {
-          "expr": "redis_keyspace_hits_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) * 100",
+          "expr": "sum(rate(redis_keyspace_hits_total[5m])) / (sum(rate(redis_keyspace_hits_total[5m])) + sum(rate(redis_keyspace_misses_total[5m]))) * 100",
           "legendFormat": "hit rate",
           "refId": "A"
         }
@@ -229,7 +241,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -241,7 +255,7 @@
     {
       "id": 5,
       "title": "Miss Rate",
-      "description": "Percentage of key lookups that did not find the key in cache",
+      "description": "The inverse of Hit Rate \u2014 what percentage of key lookups did NOT find the data in Redis. A high miss rate (above 20%) means Redis is not effectively caching data, increasing database load.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -255,7 +269,7 @@
       },
       "targets": [
         {
-          "expr": "redis_keyspace_misses_total / (redis_keyspace_hits_total + redis_keyspace_misses_total) * 100",
+          "expr": "sum(rate(redis_keyspace_misses_total[5m])) / (sum(rate(redis_keyspace_hits_total[5m])) + sum(rate(redis_keyspace_misses_total[5m]))) * 100",
           "legendFormat": "miss rate",
           "refId": "A"
         }
@@ -290,7 +304,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -302,7 +318,7 @@
     {
       "id": 6,
       "title": "Memory Usage",
-      "description": "Current memory usage of Redis in bytes",
+      "description": "How much memory Redis is currently using. Redis is configured with a 512MB memory limit. When Redis approaches this limit, it begins evicting keys using the configured eviction policy, which can degrade cache performance.",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -335,11 +351,11 @@
               },
               {
                 "color": "yellow",
-                "value": 1073741824
+                "value": 402653184
               },
               {
                 "color": "red",
-                "value": 2147483648
+                "value": 469762048
               }
             ]
           },
@@ -353,7 +369,9 @@
         "justifyMode": "auto",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -362,7 +380,7 @@
     {
       "id": 7,
       "title": "Memory Usage Over Time",
-      "description": "Historical trend of Redis memory consumption",
+      "description": "Historical trend of Redis memory consumption. A steadily increasing line that never drops may indicate a memory leak or keys that are never being evicted or expired.",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -392,7 +410,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -405,7 +426,7 @@
     {
       "id": 8,
       "title": "Total Keys",
-      "description": "Total number of keys stored across all databases",
+      "description": "The total number of keys stored across all Redis databases. A sudden drop may indicate a flush or mass expiration. Steady growth without corresponding application usage may indicate keys are not being set with appropriate TTLs.",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -439,7 +460,9 @@
         "justifyMode": "auto",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }

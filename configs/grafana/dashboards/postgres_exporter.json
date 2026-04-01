@@ -175,7 +175,7 @@
         "#d44a3a"
       ],
       "datasource": "PBFA97CFB590B2093",
-      "description": "Max Replication lag behind master in seconds\n\nOnly available on a standby system.\n\nSource: pg_last_xact_replay_timestamp\n\nUse: pg_stat_replication for Details.",
+      "description": "0 = primary (standalone), 1 = replica. This standalone PostgreSQL instance is not configured for replication.",
       "fieldConfig": {
         "defaults": {
           "custom": {}
@@ -244,7 +244,7 @@
       "thresholds": "",
       "timeFrom": null,
       "timeShift": null,
-      "title": "Max Replication Lag",
+      "title": "Replication Role",
       "type": "singlestat",
       "valueFontSize": "80%",
       "valueMaps": [
@@ -407,7 +407,7 @@
       "pluginVersion": "7.0.3",
       "targets": [
         {
-          "expr": "sum(pg_stat_database_blks_hit{instance=~\"$Instance\"})/(sum(pg_stat_database_blks_hit{instance=~\"$Instance\"})+sum(pg_stat_database_blks_read{instance=~\"$Instance\"}))*100",
+          "expr": "sum(rate(pg_stat_database_blks_hit{instance=~\"$Instance\"}[$Interval]))/(sum(rate(pg_stat_database_blks_hit{instance=~\"$Instance\"}[$Interval]))+sum(rate(pg_stat_database_blks_read{instance=~\"$Instance\"}[$Interval])))",
           "refId": "A"
         }
       ],
@@ -750,7 +750,7 @@
         "#d44a3a"
       ],
       "datasource": "PBFA97CFB590B2093",
-      "description": "Statements executed per Minute.\n\nSource: pg_stat_statements.calls",
+      "description": "Transaction rate (commits + rollbacks per second). Source: pg_stat_database.",
       "fieldConfig": {
         "defaults": {
           "custom": {}
@@ -931,7 +931,7 @@
         "#d44a3a"
       ],
       "datasource": "PBFA97CFB590B2093",
-      "description": "Source: pg_stat_statements.total_time / pg_stat_statements.calls",
+      "description": "Time taken by the postgres_exporter to collect the pg_stat_database statistics. Source: exporter internal metric.",
       "fieldConfig": {
         "defaults": {
           "custom": {}
@@ -2510,7 +2510,7 @@
           },
           "targets": [
             {
-              "expr": "pg_stat_database_blks_hit{instance=~\"$Instance\",datname=~\"$Database\"}/(pg_stat_database_blks_hit{instance=~\"$Instance\",datname=~\"$Database\"}+pg_stat_database_blks_read{instance=~\"$Instance\",datname=~\"$Database\"})",
+              "expr": "rate(pg_stat_database_blks_hit{instance=~\"$Instance\",datname=~\"$Database\"}[$Interval])/(rate(pg_stat_database_blks_hit{instance=~\"$Instance\",datname=~\"$Database\"}[$Interval])+rate(pg_stat_database_blks_read{instance=~\"$Instance\",datname=~\"$Database\"}[$Interval]))*100",
               "refId": "A"
             }
           ],
@@ -3623,6 +3623,6 @@
   "timezone": "",
   "title": "PostgreSQL Exporter",
   "uid": "postgres-exporter-dashboard",
-  "version": 3,
+  "version": 4,
   "description": "postgres exporter Dashboard for display important postgreSQL metric"
 }

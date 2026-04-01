@@ -2,10 +2,14 @@
   "uid": "postgresql-overview",
   "title": "PostgreSQL Overview",
   "description": "PostgreSQL database metrics from postgres_exporter for the Higth IoT monitoring stack",
-  "tags": ["postgres", "database", "highth"],
+  "tags": [
+    "postgres",
+    "database",
+    "highth"
+  ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -34,7 +38,7 @@
     {
       "id": 1,
       "title": "Active Connections",
-      "description": "Current number of active backend connections",
+      "description": "The number of backend connections currently established to PostgreSQL, shown per database. This includes both active queries and idle connections held by the connection pool.",
       "type": "stat",
       "gridPos": {
         "h": 8,
@@ -85,7 +89,9 @@
         "justifyMode": "auto",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
@@ -94,7 +100,7 @@
     {
       "id": 2,
       "title": "Transactions Per Second",
-      "description": "Rate of committed and rolled-back transactions per second",
+      "description": "How many transactions are being committed (successful writes) versus rolled back (aborted) per second. Rollbacks should be near zero \u2014 a high rollback rate indicates application-level errors or constraint violations.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -129,7 +135,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -142,7 +151,7 @@
     {
       "id": 3,
       "title": "Cache Hit Ratio",
-      "description": "Percentage of block reads served from cache vs disk",
+      "description": "Of all data block reads in the last 5 minutes, what percentage was served from PostgreSQL's shared memory buffer cache versus requiring a disk read. A ratio above 99% is ideal. Below 90% suggests the shared_buffers setting may be too small for the working data set.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -156,7 +165,7 @@
       },
       "targets": [
         {
-          "expr": "sum(pg_stat_database_blks_hit{datname=\"sensor_db\"}) / (sum(pg_stat_database_blks_hit{datname=\"sensor_db\"}) + sum(pg_stat_database_blks_read{datname=\"sensor_db\"})) * 100",
+          "expr": "sum(rate(pg_stat_database_blks_hit{datname=\"sensor_db\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{datname=\"sensor_db\"}[5m])) + sum(rate(pg_stat_database_blks_read{datname=\"sensor_db\"}[5m]))) * 100",
           "legendFormat": "cache hit ratio",
           "refId": "A"
         }
@@ -191,7 +200,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -203,7 +214,7 @@
     {
       "id": 4,
       "title": "Blocks Fetched Per Second",
-      "description": "Rate of block fetches from cache and disk",
+      "description": "How many 8KB data blocks PostgreSQL is reading per second from the buffer cache (green) versus from disk (yellow). High disk reads relative to cache reads indicate the buffer cache is missing frequently, which slows queries.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -238,7 +249,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -250,8 +264,8 @@
     },
     {
       "id": 5,
-      "title": "Average Query Duration",
-      "description": "Mean query execution time from pg_stat_statements (requires pg_stat_statements extension)",
+      "title": "Exporter Stat Collector Duration",
+      "description": "Time taken by the postgres_exporter to collect database statistics. Higher values indicate the exporter is taking longer to query pg_stat_database, which may happen under heavy database load.",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -266,7 +280,7 @@
       "targets": [
         {
           "expr": "pg_scrape_collector_duration_seconds",
-          "legendFormat": "{{queryid}}",
+          "legendFormat": "{{collector}}",
           "refId": "A"
         }
       ],
@@ -281,7 +295,10 @@
       },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom"
         },
@@ -294,7 +311,7 @@
     {
       "id": 6,
       "title": "Connection Pool Utilization",
-      "description": "Percentage of max connections (50) currently in use",
+      "description": "Percentage of the configured maximum PostgreSQL connections currently in use. When this approaches 100%, new connections may be refused. If consistently high, consider increasing max_connections or using a connection pooler like PgBouncer.",
       "type": "gauge",
       "gridPos": {
         "h": 8,
@@ -308,7 +325,7 @@
       },
       "targets": [
         {
-          "expr": "sum(pg_stat_database_numbackends) / 50 * 100",
+          "expr": "sum(pg_stat_database_numbackends) / max(pg_settings_max_connections) * 100",
           "legendFormat": "pool utilization",
           "refId": "A"
         }
@@ -347,7 +364,9 @@
       },
       "options": {
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
