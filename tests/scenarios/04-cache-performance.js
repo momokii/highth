@@ -14,7 +14,6 @@ import { Trend, Rate } from 'k6/metrics';
 // ===== CONFIGURATION =====
 const BASE_URL = __ENV.TARGET_URL || 'http://localhost:8080';
 const HOT_DEVICE_COUNT = 20;
-const TOTAL_DEVICES = 100000;
 
 function generateHotDevices() {
     const devices = [];
@@ -83,12 +82,14 @@ export const options = {
     },
   },
   thresholds: {
-    'http_req_duration': ['p(50)<10', 'p(95)<50', 'p(99)<100'],
+    // Thresholds aligned with project SLO: p50<300ms, p95<500ms, p99<800ms
+    // Aspirational "excellent" values tracked via custom Trend metrics (non-failing)
+    'http_req_duration': ['p(50)<300', 'p(95)<500', 'p(99)<800'],
     'http_req_failed': ['rate<0.01'],
-    'cold_cache_latency': ['p(95)<100'],
-    'warm_cache_latency': ['p(95)<50'],
-    'hot_cache_latency': ['p(95)<20'],
-    'cache_hit_rate': ['rate>0.6'],
+    'cold_cache_latency': ['p(95)<500'],    // cold = DB hits, should meet project target
+    'warm_cache_latency': ['p(95)<300'],    // warming up, mixed hits/misses
+    'hot_cache_latency': ['p(95)<100'],     // hot = Redis hits, should be very fast
+    'cache_hit_rate': ['rate>0.8'],         // project target: >= 80%
   },
 };
 

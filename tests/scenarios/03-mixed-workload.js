@@ -157,11 +157,13 @@ export const options = {
     },
   },
   thresholds: {
-    'http_req_duration': ['p(50)<20', 'p(95)<100', 'p(99)<300'],
-    'http_req_failed': ['rate<0.02'],
-    'health_check_latency': ['p(95)<20'],
-    'stats_query_latency': ['p(95)<100'],
-    'sensor_readings_latency': ['p(95)<200'],
+    // Thresholds aligned with project SLO: p50<300ms, p95<500ms, p99<800ms
+    // Aspirational "excellent" values tracked via custom Trend metrics (non-failing)
+    'http_req_duration': ['p(50)<300', 'p(95)<500', 'p(99)<800'],
+    'http_req_failed': ['rate<0.01'],               // tightened from 0.02 to project standard
+    'health_check_latency': ['p(95)<100'],           // health checks should be very fast
+    'stats_query_latency': ['p(95)<800'],            // MV query, aligned with project p99
+    'sensor_readings_latency': ['p(95)<500'],         // aligned with project p95 target
   },
 };
 

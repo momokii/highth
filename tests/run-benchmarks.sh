@@ -52,7 +52,44 @@ declare -A SCENARIOS=(
   ["time-range"]="02-time-range-queries.js"
   ["mixed"]="03-mixed-workload.js"
   ["cache"]="04-cache-performance.js"
+  ["stats"]="05-stats-and-aggregation.js"
 )
+
+# ============================================================================
+# HIGH-LOAD / STRESS CONFIGURATION (uncomment for stress testing)
+# ============================================================================
+# Target: 2000 RPS sustained load
+#
+# Rationale:
+#   - DB pool: 50 connections → saturates at ~1000-2000 RPS depending on query time
+#   - Redis: ~100K ops/sec (single-threaded), well above 2000 RPS
+#   - Auto-calculated maxVUs: 2000 * 2 = 4000 VUs
+#   - No API rate limiting
+#
+# PRE-CONDITIONS:
+#   - Data seeded (100K devices, 83M+ rows)
+#   - Redis warm (run hot scenario first)
+#   - Monitoring active (compose.monitoring.yml)
+#
+# MONITORING:
+#   - docker stats highth-api (CPU/memory)
+#   - Grafana postgres-exporter (connection pool)
+#   - docker logs highth-api 2>&1 | tail -f (connection errors)
+#
+# CAVEATS:
+#   - k6 needs ~200-500MB RAM at 4000 VUs
+#   - Host needs sufficient ephemeral ports
+#   - Expect degraded latency; focus on error rate <5%
+#   - Dropped iterations = system cannot sustain target RPS
+#
+# USAGE:
+#   ./tests/run-benchmarks.sh --scenario hot --rps 2000 --duration 5m --verbose
+#   ./tests/run-benchmarks.sh --scenario mixed --rps 2000 --duration 5m
+#   ./tests/run-benchmarks.sh --rps 2000 --duration 5m  # all scenarios
+# ============================================================================
+# RPS="${RPS:-2000}"
+# DURATION="${DURATION:-5m}"
+# ============================================================================
 
 # Target latency thresholds (milliseconds)
 P50_TARGET=300
@@ -170,8 +207,13 @@ TEST SCENARIOS:
                  Measures cache hit rate and latency improvements as cache warms.
                  Executor: constant-arrival-rate | Default RPS: 50 | VUs: 10-50
 
+  stats        Stats and Aggregation
+                 Tests /api/v1/stats (materialized view, cache bypass).
+                 Validates MV query performance under sustained load without Redis.
+                 Executor: constant-arrival-rate | Default RPS: 20 | VUs: 10-40
+
 PARAMETERS:
-  -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache)
+  -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache, stats)
   -r, --rps <number>        Requests per second for constant-arrival-rate scenarios
   -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)
   -u, --target-url <url>    API endpoint to test (default: http://localhost:8080)

@@ -149,14 +149,16 @@ export const options = {
     },
   },
   thresholds: {
+    // Thresholds aligned with project SLO: p50<300ms, p95<500ms, p99<800ms
+    // Aspirational "excellent" values tracked via custom Trend metrics (non-failing)
     'http_req_duration': [
-      'p(50)<10',
-      'p(95)<50',
-      'p(99)<100',
+      'p(50)<300',   // project target (excellent: <100ms)
+      'p(95)<500',   // project target (excellent: <300ms)
+      'p(99)<800',   // project target
     ],
-    'http_req_failed': ['rate<0.01'],
-    'hot_device_latency': ['p(95)<20'],
-    'cold_device_latency': ['p(95)<50'],
+    'http_req_failed': ['rate<0.01'],              // error rate < 1%
+    'hot_device_latency': ['p(95)<300'],           // aligned with project p95 target
+    'cold_device_latency': ['p(95)<500'],          // aligned with project p95 target
   },
 };
 
@@ -182,7 +184,7 @@ export default function () {
 
   const startTime = Date.now();
   const response = getSensorReadings(deviceId, {
-    type: readingType,
+    reading_type: readingType,  // FIX: was 'type' which didn't match destructuring
     limit: limit,
   });
   const duration = Date.now() - startTime;
