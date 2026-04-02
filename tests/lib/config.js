@@ -23,8 +23,8 @@ export const Config = {
 
   // Device Configuration
   TOTAL_DEVICES: 100000,     // Total devices in database
-  HOT_DEVICE_COUNT: 20,      // Number of "hot" devices (20%)
-  COLD_DEVICE_COUNT: 80,     // Number of "cold" devices (80%)
+  HOT_DEVICE_COUNT: 20,      // Number of "hot" devices (sensor-000001 to sensor-000020)
+  COLD_DEVICE_COUNT: 80,     // Number of "cold" devices spread across sensor-000021 to sensor-100000
 
   // Reading Types
   READING_TYPES: ['temperature', 'humidity', 'pressure'],
@@ -81,13 +81,15 @@ export function generateHotDevices() {
   return devices;
 }
 
-// Generate cold device IDs (bottom 80%)
+// Generate cold device IDs spread across the full 100K range (sensor-000021 to sensor-100000)
 export function generateColdDevices() {
   const devices = [];
-  const start = Config.HOT_DEVICE_COUNT + 1;
-  const end = Config.HOT_DEVICE_COUNT + Config.COLD_DEVICE_COUNT;
-  for (let i = start; i <= end; i++) {
-    const deviceId = String(i).padStart(6, '0');
+  const start = Config.HOT_DEVICE_COUNT + 1;  // 21
+  const end = Config.TOTAL_DEVICES;             // 100000
+  const step = Math.floor((end - start) / Config.COLD_DEVICE_COUNT);
+  for (let i = 0; i < Config.COLD_DEVICE_COUNT; i++) {
+    const id = start + (i * step);
+    const deviceId = String(id).padStart(6, '0');
     devices.push(`sensor-${deviceId}`);
   }
   return devices;

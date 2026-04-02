@@ -8,12 +8,13 @@
 // This is a bundled version with all dependencies inline.
 
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Trend } from 'k6/metrics';
 
 // ===== CONFIGURATION =====
 const BASE_URL = __ENV.TARGET_URL || 'http://localhost:8080';
 const HOT_DEVICE_COUNT = 20;
+const TOTAL_DEVICES = 100000;
 
 function generateHotDevices() {
     const devices = [];
@@ -78,11 +79,11 @@ function timeAgo(duration) {
 
 // ===== API ENDPOINT FUNCTIONS =====
 function getSensorReadings(deviceId, options = {}) {
-    const { type = null, from = null, to = null, limit = 100 } = options;
+    const { reading_type = null, from = null, to = null, limit = 100 } = options;
 
     const queryParams = [];
     queryParams.push(`device_id=${deviceId}`);
-    if (type) queryParams.push(`type=${type}`);
+    if (reading_type) queryParams.push(`reading_type=${reading_type}`);
     if (from) queryParams.push(`from=${encodeURIComponent(from)}`);
     if (to) queryParams.push(`to=${encodeURIComponent(to)}`);
     queryParams.push(`limit=${limit}`);
@@ -92,7 +93,7 @@ function getSensorReadings(deviceId, options = {}) {
 
     const params = {
         headers: { 'Accept': 'application/json' },
-        tags: { name: 'SensorReadings', device_id: deviceId, reading_type: type || 'all' },
+        tags: { name: 'SensorReadings', device_id: deviceId, reading_type: reading_type || 'all' },
     };
 
     return http.get(url, params);
@@ -190,8 +191,6 @@ export default function () {
       }
     },
   });
-
-  sleep(Math.random() * 0.2 + 0.1);
 }
 
 // ===== TEARDOWN FUNCTION =====

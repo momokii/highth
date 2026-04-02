@@ -8,13 +8,14 @@
 // This is a bundled version with all dependencies inline.
 
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Trend, Rate } from 'k6/metrics';
 
 // ===== CONFIGURATION =====
 const BASE_URL = __ENV.TARGET_URL || 'http://localhost:8080';
 const HOT_DEVICE_COUNT = 20;
 const COLD_DEVICE_COUNT = 80;
+const TOTAL_DEVICES = 100000;
 const HOT_DEVICE_TRAFFIC = 0.8;
 const WORKLOAD_MIX = {
     HEALTH_CHECK: 0.10,
@@ -33,10 +34,12 @@ function generateHotDevices() {
 
 function generateColdDevices() {
     const devices = [];
-    const start = HOT_DEVICE_COUNT + 1;
-    const end = HOT_DEVICE_COUNT + COLD_DEVICE_COUNT;
-    for (let i = start; i <= end; i++) {
-        const deviceId = String(i).padStart(6, '0');
+    const start = HOT_DEVICE_COUNT + 1;  // 21
+    const end = TOTAL_DEVICES;             // 100000
+    const step = Math.floor((end - start) / COLD_DEVICE_COUNT);
+    for (let i = 0; i < COLD_DEVICE_COUNT; i++) {
+        const id = start + (i * step);
+        const deviceId = String(id).padStart(6, '0');
         devices.push(`sensor-${deviceId}`);
     }
     return devices;
@@ -96,11 +99,11 @@ function getHealth() {
 }
 
 function getSensorReadings(deviceId, options = {}) {
-    const { type = null, from = null, to = null, limit = 100 } = options;
+    const { reading_type = null, from = null, to = null, limit = 100 } = options;
 
     const queryParams = [];
     queryParams.push(`device_id=${deviceId}`);
-    if (type) queryParams.push(`type=${type}`);
+    if (reading_type) queryParams.push(`reading_type=${reading_type}`);
     if (from) queryParams.push(`from=${encodeURIComponent(from)}`);
     if (to) queryParams.push(`to=${encodeURIComponent(to)}`);
     queryParams.push(`limit=${limit}`);
@@ -110,7 +113,7 @@ function getSensorReadings(deviceId, options = {}) {
 
     const params = {
         headers: { 'Accept': 'application/json' },
-        tags: { name: 'SensorReadings', device_id: deviceId, reading_type: type || 'all' },
+        tags: { name: 'SensorReadings', device_id: deviceId, reading_type: reading_type || 'all' },
     };
 
     return http.get(url, params);
@@ -229,7 +232,7 @@ export default function () {
       const to = new Date().toISOString();
 
       response = getSensorReadings(deviceId, {
-        type: readingType,
+        reading_type: readingType,
         from: from,
         to: to,
         limit: limit,
@@ -248,8 +251,6 @@ export default function () {
       });
       break;
   }
-
-  sleep(Math.random() * 0.1);
 }
 
 // ===== TEARDOWN FUNCTION =====

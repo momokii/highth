@@ -31,17 +31,18 @@ export function getHealth() {
 
 /**
  * Sensor Readings Endpoint
- * GET /api/v1/sensors/{deviceId}/readings
+ * GET /api/v1/sensor-readings?device_id=X&reading_type=Y&limit=Z
  * Query params:
- *   - type: reading type (temperature, humidity, pressure)
- *   - from: start time (ISO 8601)
- *   - to: end time (ISO 8601)
- *   - limit: max records to return
+ *   - device_id: Device identifier (required)
+ *   - reading_type: Filter by reading type (temperature, humidity, pressure)
+ *   - from: Start time (ISO 8601)
+ *   - to: End time (ISO 8601)
+ *   - limit: Max records to return
  * Returns: { data: [...], meta: { count, limit, device_id } }
  */
 export function getSensorReadings(deviceId, options = {}) {
   const {
-    type = null,
+    reading_type = null,
     from = null,
     to = null,
     limit = 100,
@@ -49,20 +50,21 @@ export function getSensorReadings(deviceId, options = {}) {
 
   // Build query string
   const queryParams = [];
-  if (type) queryParams.push(`type=${type}`);
+  queryParams.push(`device_id=${deviceId}`);
+  if (reading_type) queryParams.push(`reading_type=${reading_type}`);
   if (from) queryParams.push(`from=${encodeURIComponent(from)}`);
   if (to) queryParams.push(`to=${encodeURIComponent(to)}`);
   queryParams.push(`limit=${limit}`);
 
   const queryString = queryParams.join('&');
-  const url = `${Config.BASE_URL}/api/v1/sensors/${deviceId}/readings?${queryString}`;
+  const url = `${Config.BASE_URL}/api/v1/sensor-readings?${queryString}`;
 
   const params = {
     headers: { 'Accept': 'application/json' },
     tags: {
       name: 'SensorReadings',
       device_id: deviceId,
-      reading_type: type || 'all',
+      reading_type: reading_type || 'all',
     },
   };
 

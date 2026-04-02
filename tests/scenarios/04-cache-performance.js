@@ -8,12 +8,13 @@
 // This is a bundled version with all dependencies inline.
 
 import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { check } from 'k6';
 import { Trend, Rate } from 'k6/metrics';
 
 // ===== CONFIGURATION =====
 const BASE_URL = __ENV.TARGET_URL || 'http://localhost:8080';
 const HOT_DEVICE_COUNT = 20;
+const TOTAL_DEVICES = 100000;
 
 function generateHotDevices() {
     const devices = [];
@@ -40,11 +41,11 @@ function randomReadingType() {
 
 // ===== API ENDPOINT FUNCTIONS =====
 function getSensorReadings(deviceId, options = {}) {
-    const { type = null, limit = 100 } = options;
+    const { reading_type = null, limit = 100 } = options;
 
     const queryParams = [];
     queryParams.push(`device_id=${deviceId}`);
-    if (type) queryParams.push(`type=${type}`);
+    if (reading_type) queryParams.push(`reading_type=${reading_type}`);
     queryParams.push(`limit=${limit}`);
 
     const queryString = queryParams.join('&');
@@ -52,7 +53,7 @@ function getSensorReadings(deviceId, options = {}) {
 
     const params = {
         headers: { 'Accept': 'application/json' },
-        tags: { name: 'SensorReadings', device_id: deviceId, reading_type: type || 'all' },
+        tags: { name: 'SensorReadings', device_id: deviceId, reading_type: reading_type || 'all' },
     };
 
     return http.get(url, params);
@@ -129,7 +130,7 @@ export default function () {
 
   const startTime = Date.now();
   const response = getSensorReadings(deviceId, {
-    type: readingType,
+    reading_type: readingType,
     limit: 100,
   });
   const duration = Date.now() - startTime;
@@ -171,8 +172,6 @@ export default function () {
   if (iter === 0) {
     console.log(`VU ${__VU}: Starting in ${currentPhase.toUpperCase()} phase`);
   }
-
-  sleep(0.01);
 }
 
 // ===== TEARDOWN FUNCTION =====

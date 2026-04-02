@@ -175,7 +175,7 @@ PARAMETERS:
   -r, --rps <number>        Requests per second for constant-arrival-rate scenarios
   -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)
   -u, --target-url <url>    API endpoint to test (default: http://localhost:8080)
-  --vus <number>            Maximum virtual users (maxVUs). preAllocatedVUs stays at 10.
+  --vus <number>            Maximum virtual users (maxVUs). If omitted, auto-calculated as RPS * 2
   --with-html-report        Generate HTML report alongside JSON output
   --skip-setup              Skip service health checks before running tests
   -l, --list                List available scenarios
@@ -191,11 +191,19 @@ VUs VS RPS:
   'dropped_iterations' in the report). If VUs are excessively high relative to
   RPS, connections idle and waste resources.
 
-  Recommended:
-  - maxVUs >= RPS * 1.5 to avoid dropped iterations
-  - maxVUs <= RPS * 3 to avoid idle connections
+  AUTO-CALCULATION:
+  When --vus is omitted, maxVUs is automatically calculated as RPS * 2.
+  This provides sufficient headroom for most workloads while avoiding
+  excessive idle connections. For precise control, explicitly set --vus.
 
-  Example: For 100 RPS, set maxVUs between 150-300.
+  Recommended:
+  - Let the script auto-calculate (omit --vus) for most cases
+  - Manually set --vus only when you need precise control for specific scenarios
+  - For 1000 RPS: auto-calculated maxVUs = 2000
+
+  Manual override examples:
+  - For 100 RPS with default auto-calculation: --rps 100 (maxVUs=200)
+  - For 1000 RPS with fewer VUs: --rps 1000 --vus 1500 (if you know 2000 is too many)
 
 EXAMPLES:
   # Run all scenarios with defaults
@@ -631,6 +639,17 @@ run_all_scenarios() {
 main() {
     parse_args "$@"
 
+    # Auto-calculate maxVUs from RPS if --vus not provided
+    # This fixes the ~500 RPS cap caused by default maxVUs=50 being insufficient for higher RPS targets
+    if [ -z "$VUS" ]; then
+        VUS=$(( RPS * 2 ))
+        if [ "$VUS" -lt 50 ]; then
+            VUS=50
+        fi
+        print_info "Auto-calculated maxVUs: $VUS (RPS * 2)"
+        print_info "Override with --vus for precise control"
+    fi
+
     if [ "$LIST_ONLY" = true ]; then
         list_scenarios
     fi
@@ -639,6 +658,8 @@ main() {
 
     print_info "Configuration:"
     echo "  Target URL:  $TARGET_URL"
+    echo "  Default RPS:  $RPS"
+    echo "  Max VUs:  $VUS"
     echo "  Target Latency: p50<${P50_TARGET}ms, p95<${P95_TARGET}ms, p99<${P99_TARGET}ms"
     echo ""
 
