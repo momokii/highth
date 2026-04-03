@@ -84,8 +84,8 @@ function getSensorReadings(deviceId, options = {}) {
     const queryParams = [];
     queryParams.push(`device_id=${deviceId}`);
     if (reading_type) queryParams.push(`reading_type=${reading_type}`);
-    if (from) queryParams.push(`from=${encodeURIComponent(from)}`);
-    if (to) queryParams.push(`to=${encodeURIComponent(to)}`);
+    if (from) queryParams.push(`from=${from}`);
+    if (to) queryParams.push(`to=${to}`);
     queryParams.push(`limit=${limit}`);
 
     const queryString = queryParams.join('&');
