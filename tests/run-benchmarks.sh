@@ -42,6 +42,9 @@ LIST_ONLY=false
 SKIP_SETUP=false
 VERBOSE=false
 WITH_HTML_REPORT=false
+TIER=""
+EXPLICIT_RPS=false
+EXPLICIT_DURATION=false
 
 # Array to track result files generated during this run
 RESULT_FILES=()
@@ -53,6 +56,61 @@ declare -A SCENARIOS=(
   ["mixed"]="03-mixed-workload.js"
   ["cache"]="04-cache-performance.js"
   ["stats"]="05-stats-and-aggregation.js"
+)
+
+# ============================================================================
+# TIER PROFILES
+# ============================================================================
+# Pre-defined load profiles per scenario and tier.
+# Tiers: smoke, low, medium, high, expert
+#
+# Hardware guidance:
+#   smoke   - Any machine that can run Docker (2+ cores, 4GB RAM)
+#   low     - Development laptop (4 cores, 8GB RAM, SSD)
+#   medium  - Staging server or beefy workstation (8 cores, 16GB RAM, SSD)
+#   high    - Production-equivalent hardware (8+ cores, 16-32GB RAM, NVMe SSD)
+#   expert  - Production hardware with monitoring active (8+ cores, 32GB RAM, NVMe)
+#
+# SLO policy: All tiers use the same k6 thresholds (hardcoded in .js files).
+# Higher tiers prove the system meets the same SLO under increasing stress.
+# If expert tier fails, it means "the system breaks before this RPS level"
+# -- which is the whole point of the tier.
+#
+# Usage: ./run-benchmarks.sh --tier medium --scenario hot
+# Override: --tier medium --rps 200  (explicit --rps overrides tier RPS)
+# ============================================================================
+
+# Tier profile lookup: TIER_RPS[<tier>:<scenario>] = RPS
+declare -A TIER_RPS=(
+    # hot scenario (constant-arrival-rate, default 50 RPS, cache-heavy)
+    # Doc target: 450+ RPS with p95=7ms (cached)
+    ["smoke:hot"]=5       ["low:hot"]=50      ["medium:hot"]=150     ["high:hot"]=350     ["expert:hot"]=600
+    # time-range scenario (constant-arrival-rate, default 30 RPS, MV queries)
+    # Doc target: 300+ RPS with p95=20ms
+    ["smoke:time-range"]=5  ["low:time-range"]=30   ["medium:time-range"]=90  ["high:time-range"]=250  ["expert:time-range"]=400
+    # mixed scenario (ramping-arrival-rate, default peak 100 RPS, multi-endpoint)
+    # Doc target: 470+ RPS with p95=8ms. RPS value = peak of ramp.
+    ["smoke:mixed"]=20     ["low:mixed"]=100     ["medium:mixed"]=250    ["high:mixed"]=500    ["expert:mixed"]=800
+    # cache scenario (constant-arrival-rate, default 50 RPS, 3-phase cold/warm/hot)
+    # Duration split into 3 equal phases. Each phase needs >=10s for meaningful measurement.
+    ["smoke:cache"]=5      ["low:cache"]=50      ["medium:cache"]=100    ["high:cache"]=200    ["expert:cache"]=400
+    # stats scenario (constant-arrival-rate, default 20 RPS, MV-only, no Redis)
+    # Most DB-intensive scenario. Each request = 1 MV query, no cache help.
+    ["smoke:stats"]=3      ["low:stats"]=20      ["medium:stats"]=60     ["high:stats"]=120    ["expert:stats"]=200
+)
+
+# Tier profile lookup: TIER_DURATION[<tier>:<scenario>] = duration
+declare -A TIER_DURATION=(
+    # hot scenario durations
+    ["smoke:hot"]=10s      ["low:hot"]=30s      ["medium:hot"]=45s      ["high:hot"]=60s      ["expert:hot"]=2m
+    # time-range scenario durations
+    ["smoke:time-range"]=10s ["low:time-range"]=30s  ["medium:time-range"]=45s ["high:time-range"]=60s ["expert:time-range"]=2m
+    # mixed scenario (per-stage duration for ramping-arrival-rate)
+    ["smoke:mixed"]=10s    ["low:mixed"]=10s     ["medium:mixed"]=10s     ["high:mixed"]=15s     ["expert:mixed"]=15s
+    # cache scenario durations (total duration, split into 3 equal phases)
+    ["smoke:cache"]=30s    ["low:cache"]=45s     ["medium:cache"]=45s     ["high:cache"]=60s     ["expert:cache"]=90s
+    # stats scenario durations
+    ["smoke:stats"]=15s    ["low:stats"]=60s     ["medium:stats"]=60s     ["high:stats"]=90s     ["expert:stats"]=2m
 )
 
 # ============================================================================
@@ -139,10 +197,12 @@ parse_args() {
                 ;;
             --rps|-r)
                 RPS="$2"
+                EXPLICIT_RPS=true
                 shift 2
                 ;;
             --duration|-d)
                 DURATION="$2"
+                EXPLICIT_DURATION=true
                 shift 2
                 ;;
             --target-url|-u)
@@ -168,6 +228,10 @@ parse_args() {
             --with-html-report)
                 WITH_HTML_REPORT=true
                 shift
+                ;;
+            --tier)
+                TIER="$2"
+                shift 2
                 ;;
             --help|-h)
                 show_help
@@ -214,6 +278,7 @@ TEST SCENARIOS:
 
 PARAMETERS:
   -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache, stats)
+  --tier <name>             Load tier profile (smoke, low, medium, high, expert)
   -r, --rps <number>        Requests per second for constant-arrival-rate scenarios
   -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)
   -u, --target-url <url>    API endpoint to test (default: http://localhost:8080)
@@ -223,6 +288,33 @@ PARAMETERS:
   -l, --list                List available scenarios
   -v, --verbose             Enable verbose output (show detailed metrics after each test)
   -h, --help                Show this help message
+
+LOAD TIERS:
+  --tier <name>            Apply a pre-defined load profile per scenario
+
+  Available tiers:
+    smoke     Minimal load (verify scenario runs without errors)
+              Hardware: Any machine with Docker (2+ cores, 4GB RAM)
+
+    low       Light realistic load (everyday baseline)
+              Hardware: Development laptop (4 cores, 8GB RAM, SSD)
+              Values match scenario defaults
+
+    medium    Moderate production-like traffic (should meet SLO)
+              Hardware: Staging server (8 cores, 16GB RAM, SSD)
+
+    high      Stress test (peak traffic, SLO should hold)
+              Hardware: Production-equivalent (8+ cores, 16-32GB RAM, NVMe)
+
+    expert    Near-limit load (find the ceiling before breakage)
+              Hardware: Production with monitoring (8+ cores, 32GB RAM, NVMe)
+              Failure is acceptable and informative
+
+  Tier profiles set per-scenario RPS and duration. VUs are auto-calculated.
+  Explicit --rps, --duration, or --vus flags override tier values.
+
+  SLO policy: All tiers use the same k6 thresholds. Higher tiers prove the
+  system meets the same SLO under increasing stress.
 
 VUs VS RPS:
   VUs (Virtual Users) are the maximum concurrent connections k6 will open.
@@ -251,8 +343,20 @@ EXAMPLES:
   # Run all scenarios with defaults
   run-benchmarks.sh
 
+  # Run all scenarios at medium tier
+  run-benchmarks.sh --tier medium
+
   # Run a specific scenario
   run-benchmarks.sh --scenario hot
+
+  # Run hot scenario at high tier with HTML report
+  run-benchmarks.sh --tier high --scenario hot --with-html-report
+
+  # Expert tier for stats (heaviest DB workload) with verbose output
+  run-benchmarks.sh --tier expert --scenario stats --verbose
+
+  # Tier with explicit RPS override
+  run-benchmarks.sh --tier medium --scenario hot --rps 200
 
   # Custom load with HTML report
   run-benchmarks.sh --scenario hot --rps 100 --duration 5m --with-html-report
@@ -364,6 +468,34 @@ run_scenario() {
     echo "  Output:      $output_file"
     echo ""
 
+    # Apply tier profile if --tier is set (tier overrides global RPS/DURATION for this scenario)
+    local effective_rps="$RPS"
+    local effective_duration="$DURATION"
+    local effective_vus="$VUS"
+    if [ -n "$TIER" ]; then
+        local tier_key="${TIER}:${scenario_name}"
+        if [[ -n "${TIER_RPS[$tier_key]+_}" ]]; then
+            # Tier values are used only if no explicit override was provided
+            if [ "$EXPLICIT_RPS" != true ]; then
+                effective_rps="${TIER_RPS[$tier_key]}"
+            fi
+            if [ "$EXPLICIT_DURATION" != true ]; then
+                effective_duration="${TIER_DURATION[$tier_key]}"
+            fi
+            # VUs: recalculate from effective RPS unless explicitly set
+            if [ -z "$VUS" ]; then
+                effective_vus=$(( effective_rps * 2 ))
+                if [ "$effective_vus" -lt 50 ]; then
+                    effective_vus=50
+                fi
+            fi
+            print_info "Tier '$TIER' profile: RPS=$effective_rps, Duration=$effective_duration"
+        else
+            print_error "No tier profile for tier '$TIER', scenario '$scenario_name'"
+            return 1
+        fi
+    fi
+
     # Flush Redis before cache scenario to ensure cold cache start
     if [ "$scenario_name" = "cache" ]; then
         print_info "Flushing Redis cache for cold cache start..."
@@ -387,9 +519,9 @@ run_scenario() {
         -v "$SCRIPT_DIR:/tests" \
         -v "$RESULTS_DIR:/results" \
         -e TARGET_URL="$TARGET_URL" \
-        -e CUSTOM_RPS="$RPS" \
-        -e CUSTOM_DURATION="$DURATION" \
-        -e CUSTOM_VUS="$VUS" \
+        -e CUSTOM_RPS="$effective_rps" \
+        -e CUSTOM_DURATION="$effective_duration" \
+        -e CUSTOM_VUS="$effective_vus" \
         grafana/k6:latest run \
         $k6_verbose_flag \
         --summary-trend-stats="avg,min,med,max,p(90),p(95),p(99)" \
@@ -681,15 +813,29 @@ run_all_scenarios() {
 main() {
     parse_args "$@"
 
+    # Validate tier if specified
+    if [ -n "$TIER" ]; then
+        local valid_tiers="smoke low medium high expert"
+        if ! echo " $valid_tiers " | grep -q " $TIER "; then
+            print_error "Invalid tier: $TIER"
+            print_info "Valid tiers: $valid_tiers"
+            exit 1
+        fi
+        print_info "Load tier: $TIER"
+    fi
+
     # Auto-calculate maxVUs from RPS if --vus not provided
     # This fixes the ~500 RPS cap caused by default maxVUs=50 being insufficient for higher RPS targets
-    if [ -z "$VUS" ]; then
+    # When --tier is active, per-scenario auto-calculation happens in run_scenario()
+    if [ -z "$VUS" ] && [ -z "$TIER" ]; then
         VUS=$(( RPS * 2 ))
         if [ "$VUS" -lt 50 ]; then
             VUS=50
         fi
         print_info "Auto-calculated maxVUs: $VUS (RPS * 2)"
         print_info "Override with --vus for precise control"
+    elif [ -z "$VUS" ] && [ -n "$TIER" ]; then
+        print_info "VUs will be auto-calculated per scenario based on tier profile"
     fi
 
     if [ "$LIST_ONLY" = true ]; then
@@ -700,7 +846,21 @@ main() {
 
     print_info "Configuration:"
     echo "  Target URL:  $TARGET_URL"
-    echo "  Default RPS:  $RPS"
+    if [ -n "$TIER" ]; then
+        echo "  Load Tier:   $TIER"
+        if [ "$EXPLICIT_RPS" = true ]; then
+            echo "  RPS:         $RPS (explicit override, ignoring tier)"
+        else
+            echo "  RPS:         per-scenario (from tier)"
+        fi
+        if [ "$EXPLICIT_DURATION" = true ]; then
+            echo "  Duration:    $DURATION (explicit override, ignoring tier)"
+        else
+            echo "  Duration:    per-scenario (from tier)"
+        fi
+    else
+        echo "  Default RPS:  $RPS"
+    fi
     echo "  Max VUs:  $VUS"
     echo "  Target Latency: p50<${P50_TARGET}ms, p95<${P95_TARGET}ms, p99<${P99_TARGET}ms"
     echo ""
