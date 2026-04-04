@@ -121,14 +121,18 @@ highth/
 ├── scripts/                    # Utility scripts
 │   ├── schema/                 # Database schema & migrations
 │   │   ├── migrations/         # SQL migration files
-│   │   │   ├── 002_advanced_indexes.sql      # BRIN & covering indexes
-│   │   │   ├── 004_materialized_views.sql   # Hourly/daily/global stats MVs
-│   │   │   └── 005_incremental_mv_refresh.sql # Incremental MV refresh functions
+│   │   │   ├── 001_init_schema.sql         # Base table + primary key + 2 initial indexes
+│   │   │   ├── 002_advanced_indexes.sql    # BRIN index + composite index
+│   │   │   ├── 004_materialized_views.sql  # Hourly/daily/global stats MVs
+│   │   │   ├── 005_incremental_mv_refresh.sql # Incremental MV refresh functions
+│   │   │   └── 006_covering_index.sql      # Covering index with INCLUDE clause
 │   │   └── (schema.sql)        # Initial schema (if needed)
 │   │
 │   ├── docker-compose.yml      # Docker services definition
 │   ├── generate_data.go        # Go data generator (slower)
 │   ├── generate_data_fast.py   # Python data generator (fast, uses COPY)
+│   ├── generate_data_bulk.py   # Bulk generator with index optimization (drop/recreate indexes)
+│   ├── verify_indexes.py       # Index verification tool (standalone or importable)
 │   ├── refresh_materialized_views.sh  # Materialized view refresh automation
 │   └── run_migrations.sh       # Automated migration runner
 │
@@ -196,7 +200,9 @@ highth/
 | **`Dockerfile`** | Container Build | Multi-stage build for the API. Stage 1: Build Go binary. Stage 2: Minimal Alpine image with only the binary. Results in ~20MB image. |
 | **`.env`** | Environment Config | Contains sensitive configuration (database passwords, Redis settings). NOT in git. Use `.env.example` as template. |
 | **`go.mod`** | Go Dependencies | Lists all Go module dependencies. Defines the module path and required Go version (1.21+). |
-| **`generate_data_fast.py`** | Data Generator | Fast data generator using PostgreSQL COPY command. Generates 5,000 rows/sec. Creates realistic IoT sensor data with Zipf distribution. |
+| **`generate_data_fast.py`** | Data Generator | Fast data generator using PostgreSQL COPY command. Generates 100,000+ rows/sec. Creates realistic IoT sensor data with Zipf distribution. |
+| **`generate_data_bulk.py`** | Bulk Data Generator | Optimized generator that drops indexes before loading, recreates them after. Much faster for large datasets on existing tables. |
+| **`verify_indexes.py`** | Index Verification | Verifies all `sensor_readings` indexes match migration definitions. Standalone tool or importable module for automated verification. |
 
 ### Application Architecture Flow
 
@@ -1529,20 +1535,65 @@ This means:
 
 ### Data Generation Options
 
+**`generate_data_fast.py`** — Standard generator (recommended for new/empty tables)
+
 ```bash
-# Small dataset (1M rows) - 2 minutes, 300 MB
+# Small dataset (1M rows) - ~2 minutes, 300 MB
 python3 scripts/generate_data_fast.py 1000000
 
-# Medium dataset (10M rows) - 15 minutes, 3 GB
+# Medium dataset (10M rows) - ~15 minutes, 3 GB
 python3 scripts/generate_data_fast.py 10000000
 
-# Large dataset (50M rows) - 90 minutes, 15 GB
+# Large dataset (50M rows) - ~90 minutes, 15 GB
 python3 scripts/generate_data_fast.py 50000000
 ```
 
+**`generate_data_bulk.py`** — Optimized generator for large datasets on existing tables
+
+For tables that already have millions of rows, the overhead of updating indexes during COPY becomes significant. The bulk generator drops secondary indexes before loading, then recreates them afterward.
+
+```bash
+# 100M+ rows on existing table (3-5x faster than fast generator)
+python3 scripts/generate_data_bulk.py 100000000
+
+# Skip index drop (if already dropped manually)
+python3 scripts/generate_data_bulk.py 50000000 --skip-index-drop
+
+# Skip index creation (debugging/testing only)
+python3 scripts/generate_data_bulk.py 10000000 --skip-index-create
+```
+
+**When to use which generator:**
+
+| Scenario | Use | Reason |
+|----------|-----|--------|
+| New/empty table | `generate_data_fast.py` | Simpler, indexes built from scratch anyway |
+| Small datasets (<10M rows) | `generate_data_fast.py` | Index overhead is negligible |
+| Large datasets (>10M rows) on existing table | `generate_data_bulk.py` | Eliminates index maintenance overhead |
+| Rebuilding indexes manually | `generate_data_bulk.py --skip-index-drop` | If indexes already dropped |
+
+### Index Verification
+
+After generating data (especially with `generate_data_bulk.py`), verify that all indexes were recreated correctly:
+
+```bash
+# Standalone verification
+python3 scripts/verify_indexes.py
+
+# Verbose mode (shows detailed comparison)
+python3 scripts/verify_indexes.py --verbose
+
+# Custom database URL
+python3 scripts/verify_indexes.py --db-url "postgres://..."
+
+# Exit codes: 0 = all OK, 1 = some indexes missing/incorrect
+```
+
+The `generate_data_bulk.py` script automatically runs index verification at the end (Phase 5), unless you use `--skip-index-verify`.
+
 ### Custom Data Generation
 
-Edit `scripts/generate_data_fast.py`:
+Edit `scripts/generate_data_fast.py` or `scripts/generate_data_bulk.py`:
 
 ```python
 # Change number of devices
@@ -1574,6 +1625,12 @@ docker exec highth-postgres psql -U sensor_user -d sensor_db -c "SELECT count(*)
 
 # === Data Generation ===
 python3 scripts/generate_data_fast.py 1000000
+python3 scripts/generate_data_bulk.py 10000000           # With index optimization
+python3 scripts/generate_data_bulk.py 50000000 --skip-index-verify  # Skip verification
+
+# === Index Verification ===
+python3 scripts/verify_indexes.py                           # Verify all indexes
+python3 scripts/verify_indexes.py --verbose                  # Show detailed comparison
 
 # === Migrations ===
 ./scripts/run_migrations.sh
