@@ -282,6 +282,8 @@ Build complete Go API with chi router, pgx connection pooling, and caching integ
 
 - [ ] API server runs on port 8080
 - [ ] GET `/api/v1/sensor-readings` returns data
+- [ ] GET `/api/v1/sensor-readings/{id}` returns single reading by primary key
+- [ ] GET `/api/v1/sensor-readings/{id}` returns single reading by primary key
 - [ ] GET `/health` returns database/cache status
 - [ ] Connection pooling configured (25 max, 5 min)
 - [ ] Request validation implemented
@@ -447,7 +449,8 @@ Execute all 6 test scenarios and collect performance metrics to validate ≤500m
 4. **Concurrent** — PRIMARY TEST: 50 users, 60 seconds
 5. **Hot Device** — 90% queries to same device
 6. **Large N** — Request 500 records (max limit)
-7. **Scale** — If multiple dataset sizes available
+7. **PK Lookup** — Single reading by primary key ID (B-tree index scan)
+8. **Scale** — If multiple dataset sizes available
 
 ### Pass/Fail Criteria
 
@@ -458,6 +461,7 @@ Execute all 6 test scenarios and collect performance metrics to validate ≤500m
 | Hot Device | ≤500ms | ≤600ms | No outliers |
 | Cold Start | ≤600ms | ≤1000ms | Higher tolerance |
 | Large N | ≤500ms | ≤800ms | 500 records |
+| PK Lookup | ≤50ms | ≤100ms | Primary key query, tightest thresholds |
 
 ### Metrics to Collect
 

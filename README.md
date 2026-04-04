@@ -765,7 +765,51 @@ curl "http://localhost:8080/api/v1/stats?reading_type=temperature&period=day"
 }
 ```
 
-#### 4. Prometheus Metrics
+#### 4. Get Sensor Reading by ID
+```bash
+GET /api/v1/sensor-readings/{id}
+```
+
+**Parameters:**
+- `id` (**required**, path parameter): Primary key ID of the sensor reading (positive integer)
+
+**Example:**
+```bash
+curl http://localhost:8080/api/v1/sensor-readings/12345678
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "12345678",
+    "device_id": "sensor-000001",
+    "timestamp": "2026-03-19T08:19:17Z",
+    "reading_type": "temperature",
+    "value": 34.63,
+    "unit": "°C"
+  },
+  "meta": {
+    "id": "12345678"
+  }
+}
+```
+
+**Error Response (not found):**
+```json
+{
+  "error": {
+    "code": "READING_NOT_FOUND",
+    "message": "reading not found: no sensor reading exists with id 99999999",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "abc123"
+  }
+}
+```
+
+**Cache Behavior:** Results are cached in Redis for 30 seconds. Check the `X-Cache-Status` header (`HIT` or `MISS`).
+
+#### 5. Prometheus Metrics
 ```bash
 GET /metrics
 ```
@@ -1039,7 +1083,7 @@ This benchmark system validates that the API + database can handle:
 
 ### Benchmark Scenarios
 
-The test suite includes **4 comprehensive scenarios** that simulate real-world IoT traffic patterns:
+The test suite includes **6 comprehensive scenarios** that simulate real-world IoT traffic patterns:
 
 | Scenario | Purpose | Duration | Target |
 |----------|---------|----------|--------|
@@ -1047,6 +1091,8 @@ The test suite includes **4 comprehensive scenarios** that simulate real-world I
 | **Time-Range Queries** | Dashboard-style queries (1h/24h/7d) | 2 min | p95 < 500ms |
 | **Mixed Workload** ⭐ | **PRIMARY TEST** - Real API usage mix | 2.5 min | p95 < 400ms |
 | **Cache Performance** | Cold → Warm → Hot cache phases | 3 min | Hot: p95 < 100ms |
+| **Stats and Aggregation** | Materialized view query performance | 2 min | p95 < 800ms |
+| **PK Hot Lookup** | Single-row primary key index scan | 30s | p95 < 100ms |
 
 ### Scenario Details
 
@@ -1654,13 +1700,15 @@ docker exec highth-redis redis-cli KEYS "*"
 | `/health/ready` | GET | Readiness probe | - |
 | `/health/live` | GET | Liveness probe | - |
 | `/api/v1/sensor-readings` | GET | Query sensor readings for a device | `device_id` (required), `limit` (1-500), `reading_type` |
+| `/api/v1/sensor-readings/{id}` | GET | Get a single sensor reading by primary key ID | `id` (required, path parameter) |
 | `/api/v1/stats` | GET | Get database statistics | - |
 | `/metrics` | GET | Prometheus metrics | - |
 
 **Notes:**
 - `device_id` is **required** for `/api/v1/sensor-readings` - returns 400 if missing
 - Returns 404 `DEVICE_NOT_FOUND` if device has no readings (not empty array with 200)
-- All responses include `X-Request-ID`, `X-Response-Time`, and `Cache-Control` headers
+- Returns 404 `READING_NOT_FOUND` if the specified `id` does not exist
+- All responses include `X-Request-ID`, `X-Response-Time`, `X-Cache-Status`, and `Cache-Control` headers
 
 ---
 

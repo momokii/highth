@@ -325,7 +325,7 @@ go install go.k6.io/k6@latest
 
 ### k6 Test Scenarios
 
-The test suite includes four scenarios:
+The test suite includes six scenarios:
 
 1. **Hot Device Pattern** (`01-hot-device-pattern.js`)
    - Simulates Zipf distribution (20% devices get 80% queries)
@@ -342,6 +342,16 @@ The test suite includes four scenarios:
 4. **Cache Performance** (`04-cache-performance.js`)
    - Cold start vs warm cache
    - Cache hit rate measurement
+
+5. **Stats and Aggregation** (`05-stats-and-aggregation.js`)
+   - Tests materialized view queries
+   - Validates MV performance under load
+
+6. **Primary-Key Hot Lookup** (`06-pk-lookup.js`)
+   - Single-row primary key B-tree index scan
+   - Benchmarks raw PostgreSQL hot-path performance
+   - Dynamic ID range detection via `/api/v1/stats` (total_readings == MAX(id) for BIGSERIAL)
+   - Tightest latency thresholds in the suite (p95 < 100ms)
 
 ### Creating Custom Tests
 

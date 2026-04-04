@@ -103,6 +103,7 @@ Tests should be executed in this order:
 4. Concurrent Load Test      → PRIMARY VALIDATION (50 users)
 5. Hot Device Test           → Hot key scenario
 6. Large N Test              → Request 500 records
+7. PK Lookup Test            → Single reading by ID (B-tree index scan
 ```
 
 ### Why This Order?

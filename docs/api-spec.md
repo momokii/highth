@@ -214,6 +214,111 @@ Unexpected server error.
 
 ---
 
+### Get Sensor Reading by ID
+
+Retrieve a single sensor reading by its unique primary key identifier.
+
+#### Endpoint
+
+```
+GET /api/v1/sensor-readings/{id}
+```
+
+#### Path Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | integer | Yes | Primary key ID of the sensor reading (must be positive) |
+
+#### Example Request
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/sensor-readings/12345678"
+```
+
+#### Success Response (200 OK)
+
+Returns a single sensor reading with metadata.
+
+```json
+{
+  "data": {
+    "id": "12345678",
+    "device_id": "sensor-000001",
+    "timestamp": "2026-03-19T08:19:17Z",
+    "reading_type": "temperature",
+    "value": 34.63,
+    "unit": "°C"
+  },
+  "meta": {
+    "id": "12345678"
+  }
+}
+```
+
+**Response Headers:**
+- `X-Cache-Status`: `HIT` (Redis cache hit) or `MISS` (database query)
+- `X-Response-Time`: Request processing time in milliseconds
+- `X-Request-ID`: Unique request identifier
+- `Cache-Control`: `public, max-age=30`
+
+**Cache Behavior:**
+- Results are cached in Redis for 30 seconds
+- Cache key format: `sensor:id:{id}`
+- Single-row cache entries, efficient for repeated lookups
+
+#### Error Responses
+
+##### 400 Bad Request
+
+Invalid or missing ID parameter.
+
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "id must be a positive integer",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "req_abc123",
+    "details": {
+      "parameter": "id",
+      "provided": "abc",
+      "constraints": { "type": "integer", "min": 1 }
+    }
+  }
+}
+```
+
+##### 404 Not Found
+
+Reading with the specified ID does not exist.
+
+```json
+{
+  "error": {
+    "code": "READING_NOT_FOUND",
+    "message": "reading not found: no sensor reading exists with id 99999999",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "req_abc123"
+  }
+}
+```
+
+##### 500 Internal Server Error
+
+```json
+{
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "An unexpected error occurred",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "req_abc123"
+  }
+}
+```
+
+---
+
 ### Get Statistics
 
 Retrieve aggregate statistics from materialized views.

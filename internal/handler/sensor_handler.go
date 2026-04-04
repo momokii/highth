@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/kelanach/higth/internal/middleware"
 	"github.com/kelanach/higth/internal/service"
@@ -120,6 +122,54 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 	}, start, cacheStatus)
 }
 
+// GetSensorReadingByID handles GET /api/v1/sensor-readings/{id}
+//
+// Path parameters:
+//   - id (required): Primary key ID of the sensor reading
+func (h *SensorHandler) GetSensorReadingByID(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
+	// Parse id from URL path
+	idStr := chi.URLParam(r, "id")
+	if idStr == "" {
+		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id is required", start, ErrorDetails{})
+		return
+	}
+
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id < 1 {
+		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id must be a positive integer", start, ErrorDetails{
+			Parameter:   "id",
+			Provided:    idStr,
+			Constraints: map[string]any{"type": "integer", "min": 1},
+		})
+		return
+	}
+
+	// Call service layer
+	cacheStatus, reading, err := h.service.GetSensorReadingByID(r.Context(), id)
+	if err != nil {
+		h.handleServiceError(w, r, err, start)
+		return
+	}
+
+	// Record cache hit/miss metrics
+	switch cacheStatus {
+	case "HIT":
+		middleware.CacheHitsTotal.Inc()
+	case "MISS":
+		middleware.CacheMissesTotal.Inc()
+	}
+
+	// Return response
+	h.writeResponse(w, r, http.StatusOK, map[string]interface{}{
+		"data": reading,
+		"meta": map[string]interface{}{
+			"id": fmt.Sprintf("%d", id),
+		},
+	}, start, cacheStatus)
+}
+
 // parseIntOrDefault parses a string to int or returns the default value.
 func (h *SensorHandler) parseIntOrDefault(s string, defaultVal int) int {
 	if s == "" {
@@ -192,6 +242,8 @@ func (h *SensorHandler) handleServiceError(w http.ResponseWriter, r *http.Reques
 		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", err.Error(), start, ErrorDetails{})
 	case errors.Is(err, service.ErrDeviceNotFound):
 		h.writeError(w, r, http.StatusNotFound, "DEVICE_NOT_FOUND", err.Error(), start, ErrorDetails{})
+	case errors.Is(err, service.ErrReadingNotFound):
+		h.writeError(w, r, http.StatusNotFound, "READING_NOT_FOUND", err.Error(), start, ErrorDetails{})
 	default:
 		h.writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "An unexpected error occurred", start, ErrorDetails{})
 	}

@@ -56,6 +56,7 @@ declare -A SCENARIOS=(
   ["mixed"]="03-mixed-workload.js"
   ["cache"]="04-cache-performance.js"
   ["stats"]="05-stats-and-aggregation.js"
+  ["pk-lookup"]="06-pk-lookup.js"
 )
 
 # ============================================================================
@@ -97,6 +98,9 @@ declare -A TIER_RPS=(
     # stats scenario (constant-arrival-rate, default 20 RPS, MV-only, no Redis)
     # Most DB-intensive scenario. Each request = 1 MV query, no cache help.
     ["smoke:stats"]=3      ["low:stats"]=20      ["medium:stats"]=60     ["high:stats"]=120    ["expert:stats"]=200
+    # pk-lookup scenario (constant-arrival-rate, default 50 RPS, single-row PK index scan)
+    # Simplest possible query — tightest latency targets in the suite.
+    ["smoke:pk-lookup"]=5  ["low:pk-lookup"]=50  ["medium:pk-lookup"]=200 ["high:pk-lookup"]=500 ["expert:pk-lookup"]=800
 )
 
 # Tier profile lookup: TIER_DURATION[<tier>:<scenario>] = duration
@@ -111,6 +115,8 @@ declare -A TIER_DURATION=(
     ["smoke:cache"]=30s    ["low:cache"]=45s     ["medium:cache"]=45s     ["high:cache"]=60s     ["expert:cache"]=90s
     # stats scenario durations
     ["smoke:stats"]=15s    ["low:stats"]=60s     ["medium:stats"]=60s     ["high:stats"]=90s     ["expert:stats"]=2m
+    # pk-lookup scenario durations
+    ["smoke:pk-lookup"]=10s ["low:pk-lookup"]=30s ["medium:pk-lookup"]=45s ["high:pk-lookup"]=60s ["expert:pk-lookup"]=2m
 )
 
 # ============================================================================
@@ -276,8 +282,14 @@ TEST SCENARIOS:
                  Validates MV query performance under sustained load without Redis.
                  Executor: constant-arrival-rate | Default RPS: 20 | VUs: 10-40
 
+  pk-lookup    Primary-Key Hot Lookup
+                 Single-row lookup by primary key ID (B-tree index scan).
+                 Benchmarks raw PostgreSQL hot-path performance.
+                 Dynamic ID range via /api/v1/stats (total_readings == MAX(id)).
+                 Executor: constant-arrival-rate | Default RPS: 50 | VUs: 10-50
+
 PARAMETERS:
-  -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache, stats)
+  -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache, stats, pk-lookup)
   --tier <name>             Load tier profile (smoke, low, medium, high, expert)
   -r, --rps <number>        Requests per second for constant-arrival-rate scenarios
   -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)

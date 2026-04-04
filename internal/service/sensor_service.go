@@ -18,6 +18,8 @@ var (
 	ErrInvalidParameter = errors.New("invalid parameter")
 	// ErrDeviceNotFound is returned when a device has no readings.
 	ErrDeviceNotFound = errors.New("device not found")
+	// ErrReadingNotFound is returned when a specific reading ID does not exist.
+	ErrReadingNotFound = errors.New("reading not found")
 )
 
 // SensorService handles business logic for sensor readings.
@@ -97,6 +99,50 @@ func (s *SensorService) GetSensorReadings(ctx context.Context, deviceID string, 
 	return "MISS", readings, nil
 }
 
+// GetSensorReadingByID retrieves a single sensor reading by its primary key ID.
+//
+// It uses the cache-aside pattern:
+// 1. Check cache first
+// 2. If cache miss, query database by primary key
+// 3. Populate cache for next request
+//
+// Results are cached for 30 seconds by default.
+// Returns (cacheStatus, reading, error) where cacheStatus is "HIT", "MISS", or "".
+func (s *SensorService) GetSensorReadingByID(ctx context.Context, id int64) (string, *model.SensorReading, error) {
+	// Validate input
+	if id < 1 {
+		return "", nil, fmt.Errorf("%w: invalid id: id must be a positive integer", ErrInvalidParameter)
+	}
+
+	// Check cache first if enabled
+	if s.cache != nil && s.cache.IsEnabled() {
+		key := s.pkCacheKey(id)
+		var cached model.SensorReading
+		if err := s.cache.Get(ctx, key, &cached); err == nil {
+			return "HIT", &cached, nil
+		}
+	}
+
+	// Cache miss - query database by primary key
+	reading, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to query sensor reading: %w", err)
+	}
+
+	// Not found
+	if reading == nil {
+		return "", nil, fmt.Errorf("%w: no sensor reading exists with id %d", ErrReadingNotFound, id)
+	}
+
+	// Populate cache (fire and forget - don't fail if cache is down)
+	if s.cache != nil && s.cache.IsEnabled() {
+		key := s.pkCacheKey(id)
+		_ = s.cache.Set(ctx, key, reading)
+	}
+
+	return "MISS", reading, nil
+}
+
 // isValidDeviceID checks if the device ID is valid.
 // Valid device IDs contain only alphanumeric characters, hyphens, and underscores.
 // Length must be between 1 and 50 characters.
@@ -144,6 +190,12 @@ func (s *SensorService) cacheKey(deviceID string, limit int, readingType string,
 		return fmt.Sprintf("sensor:%s:readings:%d:%s%s%s", deviceID, limit, readingType, fromStr, toStr)
 	}
 	return fmt.Sprintf("sensor:%s:readings:%d%s%s", deviceID, limit, fromStr, toStr)
+}
+
+// pkCacheKey generates a consistent cache key for a single sensor reading lookup by ID.
+// Format: sensor:id:{id}
+func (s *SensorService) pkCacheKey(id int64) string {
+	return fmt.Sprintf("sensor:id:%d", id)
 }
 
 // GetStats returns database statistics from the materialized view.

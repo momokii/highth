@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/kelanach/higth/internal/model"
 )
@@ -145,6 +146,29 @@ func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int
 	}
 
 	return readings, nil
+}
+
+// GetByID retrieves a single sensor reading by its primary key ID.
+// Returns nil (no error) if no row is found — the service layer handles the not-found case.
+// The query uses the primary key B-tree index for O(1) lookup.
+func (r *SensorRepository) GetByID(ctx context.Context, id int64) (*model.SensorReading, error) {
+	var reading model.SensorReading
+	var rowID int64
+
+	err := r.db.QueryRow(ctx,
+		"SELECT id, device_id, timestamp, reading_type, value, unit FROM sensor_readings WHERE id = $1",
+		id,
+	).Scan(&rowID, &reading.DeviceID, &reading.Timestamp, &reading.ReadingType, &reading.Value, &reading.Unit)
+
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+
+	reading.ID = fmt.Sprintf("%d", rowID)
+	return &reading, nil
 }
 
 // GetRowCount returns the total number of sensor readings in the database.
