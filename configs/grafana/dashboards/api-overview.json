@@ -98,7 +98,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (endpoint, le))",
+          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
           "legendFormat": "p50 - {{endpoint}}",
           "refId": "A"
         }
@@ -144,7 +144,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (endpoint, le))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
           "legendFormat": "p95 - {{endpoint}}",
           "refId": "A"
         }
@@ -190,7 +190,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (endpoint, le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
           "legendFormat": "p99 - {{endpoint}}",
           "refId": "A"
         }

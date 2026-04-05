@@ -243,16 +243,7 @@ Returns an array of sensor readings in reverse chronological order (newest first
       "timestamp": "2025-01-15T10:30:00Z",
       "reading_type": "temperature",
       "value": 23.45,
-      "unit": "celsius",
-      "metadata": {
-        "firmware_version": "2.1.0",
-        "battery_level": 87,
-        "location": {
-          "building": "Building A",
-          "floor": 3,
-          "room": "301"
-        }
-      }
+      "unit": "celsius"
     },
     {
       "id": "12345677",
@@ -260,11 +251,7 @@ Returns an array of sensor readings in reverse chronological order (newest first
       "timestamp": "2025-01-15T10:29:00Z",
       "reading_type": "temperature",
       "value": 23.42,
-      "unit": "celsius",
-      "metadata": {
-        "firmware_version": "2.1.0",
-        "battery_level": 87
-      }
+      "unit": "celsius"
     }
   ],
   "meta": {
@@ -290,7 +277,6 @@ Each object in the `data` array represents a single sensor reading:
 | `reading_type` | string | Type of sensor reading |
 | `value` | number | Sensor value |
 | `unit` | string | Unit of measurement |
-| `metadata` | object (nullable) | Device-specific metadata (JSONB) |
 
 ##### meta object
 
@@ -783,9 +769,6 @@ components:
           type: number
         unit:
           type: string
-        metadata:
-          type: object
-          nullable: true
 
     ResponseMetadata:
       type: object

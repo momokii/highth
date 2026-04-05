@@ -149,7 +149,7 @@ func (s *SensorService) GetSensorReadingByID(ctx context.Context, id int64) (str
 // Empty string is valid (returns readings from all devices).
 func (s *SensorService) isValidDeviceID(deviceID string) bool {
 	if deviceID == "" {
-		return true // Empty device_id means all devices
+		return false
 	}
 	if len(deviceID) > 50 {
 		return false

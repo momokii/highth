@@ -251,7 +251,7 @@ This is a **portfolio-quality demonstration** that proves PostgreSQL can handle 
 | Component | Technology | Why This Choice |
 |-----------|-----------|-----------------|
 | **API** | Go 1.21+ | Goroutines handle 10K+ concurrent connections; pgx driver uses binary protocol for faster queries; 20MB Docker image |
-| **Database** | PostgreSQL 16 | BRIN indexes (perfect for time-series), materialized views (pre-computed aggregations), JSONB metadata, declarative partitioning-ready |
+| **Database** | PostgreSQL 16 | BRIN indexes (perfect for time-series), materialized views (pre-computed aggregations), declarative partitioning-ready |
 | **Cache** | Redis 7 | LRU eviction keeps hot keys cached; 30s TTL balances freshness vs performance; cache-aside pattern is resilient to failures |
 | **Pool** | pgx built-in | Connection pooling directly in the Go application; 50 max connections with 10 min idle timeout; no separate PgBouncer needed |
 | **Metrics** | Prometheus | Built-in `/metrics` endpoint; tracks request latency, cache hit rate, database pool stats; industry standard |

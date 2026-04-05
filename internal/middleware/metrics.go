@@ -66,11 +66,9 @@ var (
 )
 
 // normalizeEndpoint returns a normalized endpoint path for metrics labeling.
-// It strips query parameters and normalizes dynamic path segments to prevent
-// label cardinality explosion (e.g., device_id values).
+// Since the API uses query parameters (not path parameters) for filtering,
+// r.URL.Path already produces clean, low-cardinality endpoint labels.
 func normalizeEndpoint(path string) string {
-	// For now, return the path as-is.
-	// TODO: Add normalization for dynamic path segments if needed.
 	return path
 }
 

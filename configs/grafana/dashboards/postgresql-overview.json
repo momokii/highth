@@ -243,7 +243,7 @@
           "color": {
             "mode": "palette-classic"
           },
-          "unit": "Bps"
+          "unit": "ops"
         },
         "overrides": []
       },
@@ -325,7 +325,7 @@
       },
       "targets": [
         {
-          "expr": "sum(pg_stat_database_numbackends) / max(pg_settings_max_connections) * 100",
+          "expr": "sum(pg_stat_database_numbackends) / scalar(pg_settings_max_connections) * 100",
           "legendFormat": "pool utilization",
           "refId": "A"
         }

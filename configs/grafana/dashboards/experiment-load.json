@@ -100,7 +100,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (endpoint, le))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, endpoint))",
           "legendFormat": "p95 - {{endpoint}}",
           "refId": "A"
         }
@@ -320,11 +320,11 @@
               },
               {
                 "color": "yellow",
-                "value": 394264576
+                "value": 375809638
               },
               {
                 "color": "red",
-                "value": 436207616
+                "value": 456130560
               }
             ]
           },

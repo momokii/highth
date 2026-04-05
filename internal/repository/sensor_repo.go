@@ -64,6 +64,10 @@ func New(cfg Config) (*SensorRepository, error) {
 // If from is non-nil, filters to timestamps >= from.
 // If to is non-nil, filters to timestamps <= to.
 func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int, readingType string, from, to *time.Time) ([]model.SensorReading, error) {
+	// Add per-query timeout to prevent connection pool exhaustion under heavy load
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	var query string
 	var args []interface{}
 	var argIdx int = 1
@@ -152,6 +156,10 @@ func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int
 // Returns nil (no error) if no row is found — the service layer handles the not-found case.
 // The query uses the primary key B-tree index for O(1) lookup.
 func (r *SensorRepository) GetByID(ctx context.Context, id int64) (*model.SensorReading, error) {
+	// Add per-query timeout to prevent connection pool exhaustion
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	var reading model.SensorReading
 	var rowID int64
 

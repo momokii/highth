@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -149,6 +150,16 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Validate time range: from must be before or equal to to
+	if from != nil && to != nil && from.After(*to) {
+		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "from must be before to", start, ErrorDetails{
+			Parameter:   "from, to",
+			Provided:    fmt.Sprintf("from=%s, to=%s", from.Format(time.RFC3339), to.Format(time.RFC3339)),
+			Constraints: map[string]any{"rule": "from <= to"},
+		})
+		return
+	}
+
 	// Call service layer
 	cacheStatus, readings, err := h.service.GetSensorReadings(r.Context(), deviceID, limit, readingType, from, to)
 	if err != nil {
@@ -177,19 +188,12 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 }
 
 // strconvParseInt64 parses a string to int64 or returns an error.
-// Inline replacement to avoid strconv import when using chi.URLParam.
+// Uses standard library strconv.ParseInt which correctly handles overflow.
 func strconvParseInt64(s string) (int64, error) {
 	if s == "" {
 		return 0, fmt.Errorf("empty string")
 	}
-	var result int64
-	for _, ch := range s {
-		if ch < '0' || ch > '9' {
-			return 0, fmt.Errorf("invalid character")
-		}
-		result = result*10 + int64(ch-'0')
-	}
-	return result, nil
+	return strconv.ParseInt(s, 10, 64)
 }
 
 // parseIntOrDefault parses a string to int or returns the default value.
@@ -259,6 +263,7 @@ func (h *SensorHandler) writeError(w http.ResponseWriter, r *http.Request, statu
 
 // handleServiceError maps service errors to HTTP status codes.
 func (h *SensorHandler) handleServiceError(w http.ResponseWriter, r *http.Request, err error, start time.Time) {
+	log.Printf("ERROR: service error: %v", err)
 	switch {
 	case errors.Is(err, service.ErrInvalidParameter):
 		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", err.Error(), start, ErrorDetails{})
