@@ -18,7 +18,7 @@ const BASE_URL = __ENV.TARGET_URL || 'http://localhost:8080';
 
 // ===== API ENDPOINT FUNCTIONS =====
 function getSensorReadingById(id) {
-    const url = `${BASE_URL}/api/v1/sensor-readings/${id}`;
+    const url = `${BASE_URL}/api/v1/sensor-readings?id=${id}`;
 
     const params = {
         headers: { 'Accept': 'application/json' },

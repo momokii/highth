@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/kelanach/higth/internal/middleware"
 	"github.com/kelanach/higth/internal/service"
@@ -35,8 +33,12 @@ func NewSensorHandler(service *service.SensorService) *SensorHandler {
 
 // GetSensorReadings handles GET /api/v1/sensor-readings
 //
-// Query parameters:
-//   - device_id (required): Device identifier
+// Unified endpoint supporting two modes via query parameters:
+//   - id (optional): Primary key ID for single-row lookup
+//   - device_id (optional): Device identifier for device-filtered query
+//
+// Exactly one of `id` or `device_id` must be provided.
+// When using `device_id`, additional optional parameters:
 //   - limit (optional): Maximum number of readings to return (1-500, default 10)
 //   - reading_type (optional): Filter by reading type (temperature, humidity, pressure)
 //   - from (optional): ISO 8601 timestamp for start of time range
@@ -44,12 +46,64 @@ func NewSensorHandler(service *service.SensorService) *SensorHandler {
 func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Parse device_id (required)
+	// Parse both id and device_id from query string
+	idStr := r.URL.Query().Get("id")
 	deviceID := r.URL.Query().Get("device_id")
-	if deviceID == "" {
-		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "device_id is required", start, ErrorDetails{})
+
+	// Mutual exclusivity check
+	if idStr != "" && deviceID != "" {
+		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id and device_id are mutually exclusive", start, ErrorDetails{
+			Parameter: "id,device_id",
+			Provided: map[string]string{"id": idStr, "device_id": deviceID},
+			Constraints: map[string]string{"rule": "provide exactly one"},
+		})
 		return
 	}
+
+	// At least one is required
+	if idStr == "" && deviceID == "" {
+		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id or device_id is required", start, ErrorDetails{})
+		return
+	}
+
+	// PK lookup mode: id provided
+	if idStr != "" {
+		id, err := strconvParseInt64(idStr)
+		if err != nil || id < 1 {
+			h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id must be a positive integer", start, ErrorDetails{
+				Parameter:   "id",
+				Provided:    idStr,
+				Constraints: map[string]any{"type": "integer", "min": 1},
+			})
+			return
+		}
+
+		// Call service layer for PK lookup
+		cacheStatus, reading, err := h.service.GetSensorReadingByID(r.Context(), id)
+		if err != nil {
+			h.handleServiceError(w, r, err, start)
+			return
+		}
+
+		// Record cache metrics
+		switch cacheStatus {
+		case "HIT":
+			middleware.CacheHitsTotal.Inc()
+		case "MISS":
+			middleware.CacheMissesTotal.Inc()
+		}
+
+		// Return single-object response
+		h.writeResponse(w, r, http.StatusOK, map[string]interface{}{
+			"data": reading,
+			"meta": map[string]interface{}{
+				"id": fmt.Sprintf("%d", id),
+			},
+		}, start, cacheStatus)
+		return
+	}
+
+	// Device query mode: device_id provided (existing logic, unchanged)
 
 	// Parse and validate limit
 	limit := h.parseIntOrDefault(r.URL.Query().Get("limit"), 10)
@@ -122,52 +176,20 @@ func (h *SensorHandler) GetSensorReadings(w http.ResponseWriter, r *http.Request
 	}, start, cacheStatus)
 }
 
-// GetSensorReadingByID handles GET /api/v1/sensor-readings/{id}
-//
-// Path parameters:
-//   - id (required): Primary key ID of the sensor reading
-func (h *SensorHandler) GetSensorReadingByID(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
-	// Parse id from URL path
-	idStr := chi.URLParam(r, "id")
-	if idStr == "" {
-		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id is required", start, ErrorDetails{})
-		return
+// strconvParseInt64 parses a string to int64 or returns an error.
+// Inline replacement to avoid strconv import when using chi.URLParam.
+func strconvParseInt64(s string) (int64, error) {
+	if s == "" {
+		return 0, fmt.Errorf("empty string")
 	}
-
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil || id < 1 {
-		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", "id must be a positive integer", start, ErrorDetails{
-			Parameter:   "id",
-			Provided:    idStr,
-			Constraints: map[string]any{"type": "integer", "min": 1},
-		})
-		return
+	var result int64
+	for _, ch := range s {
+		if ch < '0' || ch > '9' {
+			return 0, fmt.Errorf("invalid character")
+		}
+		result = result*10 + int64(ch-'0')
 	}
-
-	// Call service layer
-	cacheStatus, reading, err := h.service.GetSensorReadingByID(r.Context(), id)
-	if err != nil {
-		h.handleServiceError(w, r, err, start)
-		return
-	}
-
-	// Record cache hit/miss metrics
-	switch cacheStatus {
-	case "HIT":
-		middleware.CacheHitsTotal.Inc()
-	case "MISS":
-		middleware.CacheMissesTotal.Inc()
-	}
-
-	// Return response
-	h.writeResponse(w, r, http.StatusOK, map[string]interface{}{
-		"data": reading,
-		"meta": map[string]interface{}{
-			"id": fmt.Sprintf("%d", id),
-		},
-	}, start, cacheStatus)
+	return result, nil
 }
 
 // parseIntOrDefault parses a string to int or returns the default value.

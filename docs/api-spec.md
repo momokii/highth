@@ -64,9 +64,9 @@ https://api.example.com/api/v1
 
 ## Endpoints
 
-### Get Sensor Readings
+### Get Sensor Readings (Unified Endpoint)
 
-Retrieve the most recent N sensor readings for a specific device.
+Unified endpoint supporting two modes via query parameters for maximum flexibility and consistent metrics.
 
 #### Endpoint
 
@@ -78,9 +78,151 @@ GET /api/v1/sensor-readings
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `id` | integer | Conditional* | - | Primary key ID for single-row lookup |
+| `device_id` | string | Conditional* | - | Device identifier for device-filtered query |
+| `limit` | integer | No | 10 | Number of records to return (1-500, device_id mode only) |
+| `reading_type` | string | No | - | Filter by reading type (device_id mode only) |
+| `from` | string | No | - | ISO 8601 timestamp for start of time range (device_id mode only) |
+| `to` | string | No | - | ISO 8601 timestamp for end of time range (device_id mode only) |
+
+*Exactly one of `id` or `device_id` must be provided. They are mutually exclusive.
+
+#### Mode Selection
+
+The endpoint operates in one of two modes based on the query parameters:
+
+**PK Lookup Mode** (when `id` is provided):
+- Retrieves a single sensor reading by its primary key ID
+- Fast B-tree index scan on the `id` column
+- Single-row cache entries with 30s TTL
+
+**Device Query Mode** (when `device_id` is provided):
+- Retrieves multiple sensor readings for a specific device
+- Uses covering index on `(device_id, timestamp DESC)`
+- Supports time-range filtering and reading type filtering
+- Multi-row result sets with pagination via `limit`
+
+#### Mutual Exclusivity
+
+**Validation Rules:**
+- Both `id` and `device_id` provided → `400 INVALID_PARAMETER`: "id and device_id are mutually exclusive"
+- Neither `id` nor `device_id` provided → `400 INVALID_PARAMETER`: "id or device_id is required"
+
+---
+
+### Mode 1: PK Lookup (Single Reading)
+
+Retrieve a single sensor reading by its unique primary key identifier.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `id` | integer | Yes | Primary key ID of the sensor reading (must be positive) |
+
+#### Example Request
+
+```bash
+curl -X GET "http://localhost:8080/api/v1/sensor-readings?id=12345678"
+```
+
+#### Success Response (200 OK)
+
+Returns a single sensor reading.
+
+```json
+{
+  "data": {
+    "id": "12345678",
+    "device_id": "sensor-000001",
+    "timestamp": "2026-03-19T08:19:17Z",
+    "reading_type": "temperature",
+    "value": 34.63,
+    "unit": "°C"
+  },
+  "meta": {
+    "id": "12345678"
+  }
+}
+```
+
+**Response Headers:**
+- `X-Cache-Status`: `HIT` (Redis cache hit) or `MISS` (database query)
+- `X-Response-Time`: Request processing time in milliseconds
+- `X-Request-ID`: Unique request identifier
+- `Cache-Control`: `public, max-age=30`
+
+**Cache Behavior:**
+- Cache key format: `sensor:id:{id}`
+- Single-row cache entries, efficient for repeated lookups
+- 30-second TTL
+
+#### Error Responses (PK Mode)
+
+##### 400 Bad Request - Invalid ID
+
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "id must be a positive integer",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "req_abc123",
+    "details": {
+      "parameter": "id",
+      "provided": "abc",
+      "constraints": { "type": "integer", "min": 1 }
+    }
+  }
+}
+```
+
+##### 400 Bad Request - Mutual Exclusivity Violation
+
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "id and device_id are mutually exclusive",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "req_abc123",
+    "details": {
+      "parameter": "id,device_id",
+      "provided": {"id": "123", "device_id": "sensor-001"},
+      "constraints": {"rule": "provide exactly one"}
+    }
+  }
+}
+```
+
+##### 404 Not Found
+
+```json
+{
+  "error": {
+    "code": "READING_NOT_FOUND",
+    "message": "reading not found: no sensor reading exists with id 99999999",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "req_abc123"
+  }
+}
+```
+
+---
+
+### Mode 2: Device Query (Multiple Readings)
+
+Retrieve the most recent N sensor readings for a specific device.
+
+#### Request Parameters
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
 | `device_id` | string | Yes | - | Device identifier to fetch readings for |
 | `limit` | integer | No | 10 | Number of records to return (1-500) |
 | `reading_type` | string | No | - | Filter by reading type (e.g., "temperature", "humidity") |
+| `from` | string | No | - | ISO 8601 timestamp for start of time range |
+| `to` | string | No | - | ISO 8601 timestamp for end of time range |
 
 #### Example Request
 
@@ -159,7 +301,7 @@ Each object in the `data` array represents a single sensor reading:
 | `device_id` | string | Device identifier from request |
 | `reading_type` | string (nullable) | Reading type filter from request |
 
-#### Error Responses
+#### Error Responses (Device Mode)
 
 ##### 400 Bad Request
 
@@ -197,9 +339,9 @@ Device has no readings in the database.
 }
 ```
 
-##### 500 Internal Server Error
+#### Common Error Responses
 
-Unexpected server error.
+##### 500 Internal Server Error
 
 ```json
 {
@@ -207,111 +349,6 @@ Unexpected server error.
     "code": "INTERNAL_ERROR",
     "message": "An unexpected error occurred",
     "timestamp": "2025-01-15T10:30:00Z",
-    "request_id": "req_abc123"
-  }
-}
-```
-
----
-
-### Get Sensor Reading by ID
-
-Retrieve a single sensor reading by its unique primary key identifier.
-
-#### Endpoint
-
-```
-GET /api/v1/sensor-readings/{id}
-```
-
-#### Path Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `id` | integer | Yes | Primary key ID of the sensor reading (must be positive) |
-
-#### Example Request
-
-```bash
-curl -X GET "http://localhost:8080/api/v1/sensor-readings/12345678"
-```
-
-#### Success Response (200 OK)
-
-Returns a single sensor reading with metadata.
-
-```json
-{
-  "data": {
-    "id": "12345678",
-    "device_id": "sensor-000001",
-    "timestamp": "2026-03-19T08:19:17Z",
-    "reading_type": "temperature",
-    "value": 34.63,
-    "unit": "°C"
-  },
-  "meta": {
-    "id": "12345678"
-  }
-}
-```
-
-**Response Headers:**
-- `X-Cache-Status`: `HIT` (Redis cache hit) or `MISS` (database query)
-- `X-Response-Time`: Request processing time in milliseconds
-- `X-Request-ID`: Unique request identifier
-- `Cache-Control`: `public, max-age=30`
-
-**Cache Behavior:**
-- Results are cached in Redis for 30 seconds
-- Cache key format: `sensor:id:{id}`
-- Single-row cache entries, efficient for repeated lookups
-
-#### Error Responses
-
-##### 400 Bad Request
-
-Invalid or missing ID parameter.
-
-```json
-{
-  "error": {
-    "code": "INVALID_PARAMETER",
-    "message": "id must be a positive integer",
-    "timestamp": "2026-03-19T09:02:28Z",
-    "request_id": "req_abc123",
-    "details": {
-      "parameter": "id",
-      "provided": "abc",
-      "constraints": { "type": "integer", "min": 1 }
-    }
-  }
-}
-```
-
-##### 404 Not Found
-
-Reading with the specified ID does not exist.
-
-```json
-{
-  "error": {
-    "code": "READING_NOT_FOUND",
-    "message": "reading not found: no sensor reading exists with id 99999999",
-    "timestamp": "2026-03-19T09:02:28Z",
-    "request_id": "req_abc123"
-  }
-}
-```
-
-##### 500 Internal Server Error
-
-```json
-{
-  "error": {
-    "code": "INTERNAL_ERROR",
-    "message": "An unexpected error occurred",
-    "timestamp": "2026-03-19T09:02:28Z",
     "request_id": "req_abc123"
   }
 }

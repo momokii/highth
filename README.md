@@ -765,17 +765,19 @@ curl "http://localhost:8080/api/v1/stats?reading_type=temperature&period=day"
 }
 ```
 
-#### 4. Get Sensor Reading by ID
+#### 4. Get Sensor Reading by ID (PK Lookup Mode)
 ```bash
-GET /api/v1/sensor-readings/{id}
+GET /api/v1/sensor-readings?id={id}
 ```
 
 **Parameters:**
-- `id` (**required**, path parameter): Primary key ID of the sensor reading (positive integer)
+- `id` (**required**, query parameter): Primary key ID of the sensor reading (positive integer)
+
+**Mutual Exclusivity:** You must provide **exactly one** of `id` or `device_id`. Providing both returns 400 `INVALID_PARAMETER`.
 
 **Example:**
 ```bash
-curl http://localhost:8080/api/v1/sensor-readings/12345678
+curl "http://localhost:8080/api/v1/sensor-readings?id=12345678"
 ```
 
 **Response:**
@@ -803,6 +805,23 @@ curl http://localhost:8080/api/v1/sensor-readings/12345678
     "message": "reading not found: no sensor reading exists with id 99999999",
     "timestamp": "2026-03-19T09:02:28Z",
     "request_id": "abc123"
+  }
+}
+```
+
+**Error Response (mutual exclusivity violation):**
+```json
+{
+  "error": {
+    "code": "INVALID_PARAMETER",
+    "message": "id and device_id are mutually exclusive",
+    "timestamp": "2026-03-19T09:02:28Z",
+    "request_id": "abc123",
+    "details": {
+      "parameter": "id,device_id",
+      "provided": {"id": "123", "device_id": "sensor-001"},
+      "constraints": {"rule": "provide exactly one"}
+    }
   }
 }
 ```
@@ -1699,15 +1718,14 @@ docker exec highth-redis redis-cli KEYS "*"
 | `/health` | GET | Health check with dependency status and latency | - |
 | `/health/ready` | GET | Readiness probe | - |
 | `/health/live` | GET | Liveness probe | - |
-| `/api/v1/sensor-readings` | GET | Query sensor readings for a device | `device_id` (required), `limit` (1-500), `reading_type` |
-| `/api/v1/sensor-readings/{id}` | GET | Get a single sensor reading by primary key ID | `id` (required, path parameter) |
+| `/api/v1/sensor-readings` | GET | Unified endpoint for sensor readings query | `id` OR `device_id` (required, mutually exclusive), `limit` (1-500), `reading_type`, `from`, `to` |
 | `/api/v1/stats` | GET | Get database statistics | - |
 | `/metrics` | GET | Prometheus metrics | - |
 
 **Notes:**
-- `device_id` is **required** for `/api/v1/sensor-readings` - returns 400 if missing
-- Returns 404 `DEVICE_NOT_FOUND` if device has no readings (not empty array with 200)
-- Returns 404 `READING_NOT_FOUND` if the specified `id` does not exist
+- `/api/v1/sensor-readings` requires **exactly one** of `id` or `device_id` - returns 400 if both or neither provided
+- When `id` is provided: Single-row primary key lookup (returns 404 `READING_NOT_FOUND` if not found)
+- When `device_id` is provided: Device query mode (returns 404 `DEVICE_NOT_FOUND` if no readings)
 - All responses include `X-Request-ID`, `X-Response-Time`, `X-Cache-Status`, and `Cache-Control` headers
 
 ---

@@ -80,7 +80,6 @@ func main() {
 	// Routes
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/sensor-readings", sensorHandler.GetSensorReadings)
-		r.Get("/sensor-readings/{id}", sensorHandler.GetSensorReadingByID)
 		r.Get("/stats", sensorHandler.GetStats)
 	})
 

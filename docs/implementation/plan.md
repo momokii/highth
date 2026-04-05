@@ -281,9 +281,9 @@ Build complete Go API with chi router, pgx connection pooling, and caching integ
 ### Exit Criteria
 
 - [ ] API server runs on port 8080
-- [ ] GET `/api/v1/sensor-readings` returns data
-- [ ] GET `/api/v1/sensor-readings/{id}` returns single reading by primary key
-- [ ] GET `/api/v1/sensor-readings/{id}` returns single reading by primary key
+- [ ] GET `/api/v1/sensor-readings` returns data (unified endpoint with both modes)
+- [ ] GET `/api/v1/sensor-readings?id={id}` returns single reading by primary key
+- [ ] GET `/api/v1/sensor-readings?device_id={id}` returns multiple readings for device
 - [ ] GET `/health` returns database/cache status
 - [ ] Connection pooling configured (25 max, 5 min)
 - [ ] Request validation implemented
