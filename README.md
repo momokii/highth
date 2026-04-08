@@ -557,6 +557,20 @@ The `docker-compose.yml` includes 14 performance-tuned PostgreSQL parameters opt
 >
 > **Configuring for your hardware?** The default configuration is tuned for 8GB RAM + SSD + 8 cores. If your machine has different specs, see [Configuration Adjustment Guide](docs/high-throughput-guide/05-configuration-adjustment-guide.md) for hardware presets and parameter adjustment instructions.
 
+#### Redis Configuration
+
+The `docker-compose.yml` includes 8 Redis server parameters optimized for high-throughput caching workloads.
+
+**Parameters include:**
+- **Memory**: `maxmemory=512mb`, `maxmemory-policy=allkeys-lru` — LRU eviction keeps hot keys cached when memory is full
+- **Persistence**: `appendonly=yes` — AOF persistence for cache durability (optional for pure cache use case)
+- **Connection limits**: `maxclients=10000` — explicit client connection limit
+- **Connection health**: `tcp-keepalive=60`, `timeout=300` — detect dead connections and clean up idle clients after 5 minutes
+- **Performance**: `hz=100` — internal task frequency (expired key cleanup, idle client detection) runs 100×/sec instead of default 10×/sec
+- **Burst handling**: `tcp-backlog=511` — pending connection queue for sudden traffic spikes
+
+> **For detailed explanation of each parameter**, see [docs/implementation/cache-setup.md](docs/implementation/cache-setup.md#configuration-parameters-explained).
+
 **Step 3: Initialize Database**
 
 ```bash

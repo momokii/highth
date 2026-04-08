@@ -42,7 +42,16 @@ services:
       - "6380:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --maxclients 10000
+      --tcp-keepalive 60
+      --timeout 300
+      --hz 100
+      --tcp-backlog 511
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -70,6 +79,10 @@ services:
       DB_HEALTH_CHECK_PERIOD: ${DB_HEALTH_CHECK_PERIOD:-30s}
       REDIS_ENABLED: ${REDIS_ENABLED:-true}
       REDIS_TTL: ${REDIS_TTL:-30s}
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-50}
+      REDIS_MIN_IDLE_CONNS: ${REDIS_MIN_IDLE_CONNS:-10}
+      REDIS_MAX_IDLE_CONNS: ${REDIS_MAX_IDLE_CONNS:-50}
+      REDIS_CONN_MAX_IDLE_TIME: ${REDIS_CONN_MAX_IDLE_TIME:-5m}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30s}
       PORT: ${PORT:-8080}

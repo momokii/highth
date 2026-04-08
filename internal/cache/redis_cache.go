@@ -19,9 +19,13 @@ type RedisCache struct {
 
 // Config holds Redis configuration.
 type Config struct {
-	URL     string
-	Enabled bool
-	TTL     time.Duration
+	URL             string
+	Enabled         bool
+	TTL             time.Duration
+	PoolSize        int
+	MinIdleConns    int
+	MaxIdleConns    int
+	ConnMaxIdleTime time.Duration
 }
 
 // New creates a new RedisCache with the given configuration.
@@ -33,6 +37,20 @@ func New(cfg Config) (*RedisCache, error) {
 	opts, err := redis.ParseURL(cfg.URL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse redis URL: %w", err)
+	}
+
+	// Apply pool configuration if provided
+	if cfg.PoolSize > 0 {
+		opts.PoolSize = cfg.PoolSize
+	}
+	if cfg.MinIdleConns > 0 {
+		opts.MinIdleConns = cfg.MinIdleConns
+	}
+	if cfg.MaxIdleConns > 0 {
+		opts.MaxIdleConns = cfg.MaxIdleConns
+	}
+	if cfg.ConnMaxIdleTime > 0 {
+		opts.ConnMaxIdleTime = cfg.ConnMaxIdleTime
 	}
 
 	client := redis.NewClient(opts)

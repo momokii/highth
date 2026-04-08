@@ -44,9 +44,13 @@ func main() {
 
 	// Initialize cache
 	redisCache, err := cache.New(cache.Config{
-		URL:     cfg.RedisURL,
-		Enabled: cfg.RedisEnabled,
-		TTL:     cfg.RedisTTL,
+		URL:             cfg.RedisURL,
+		Enabled:         cfg.RedisEnabled,
+		TTL:             cfg.RedisTTL,
+		PoolSize:        cfg.RedisPoolSize,
+		MinIdleConns:    cfg.RedisMinIdleConns,
+		MaxIdleConns:    cfg.RedisMaxIdleConns,
+		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
 	if err != nil {
 		log.Printf("Warning: Failed to initialize cache: %v", err)

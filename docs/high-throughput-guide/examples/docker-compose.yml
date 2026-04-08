@@ -67,6 +67,11 @@ services:
       --appendonly yes
       --maxmemory 512mb
       --maxmemory-policy allkeys-lru
+      --maxclients 10000
+      --tcp-keepalive 60
+      --timeout 300
+      --hz 100
+      --tcp-backlog 511
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s

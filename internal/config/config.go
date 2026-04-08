@@ -26,9 +26,13 @@ type Config struct {
 	DBHealthCheckPeriod  time.Duration
 
 	// Redis configuration
-	RedisURL    string
-	RedisEnabled bool
-	RedisTTL    time.Duration
+	RedisURL          string
+	RedisEnabled      bool
+	RedisTTL          time.Duration
+	RedisPoolSize     int
+	RedisMinIdleConns int
+	RedisMaxIdleConns int
+	RedisConnMaxIdleTime time.Duration
 
 	// Cache configuration
 	CacheEnabled bool
@@ -59,9 +63,13 @@ func Load() (*Config, error) {
 		DBHealthCheckPeriod:  getEnvAsDuration("DB_HEALTH_CHECK_PERIOD", 30*time.Second),
 
 		// Redis configuration
-		RedisURL:     getEnv("REDIS_URL", "redis://localhost:6380"),
-		RedisEnabled: getEnvAsBool("REDIS_ENABLED", true),
-		RedisTTL:     getEnvAsDuration("REDIS_TTL", 30*time.Second),
+		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6380"),
+		RedisEnabled:        getEnvAsBool("REDIS_ENABLED", true),
+		RedisTTL:            getEnvAsDuration("REDIS_TTL", 30*time.Second),
+		RedisPoolSize:       getEnvAsInt("REDIS_POOL_SIZE", 50),
+		RedisMinIdleConns:   getEnvAsInt("REDIS_MIN_IDLE_CONNS", 10),
+		RedisMaxIdleConns:   getEnvAsInt("REDIS_MAX_IDLE_CONNS", 50),
+		RedisConnMaxIdleTime: getEnvAsDuration("REDIS_CONN_MAX_IDLE_TIME", 5*time.Minute),
 
 		// Cache configuration
 		CacheEnabled: getEnvAsBool("CACHE_ENABLED", true),

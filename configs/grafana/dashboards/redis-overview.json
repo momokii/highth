@@ -38,7 +38,7 @@
     {
       "id": 1,
       "title": "Connected Clients",
-      "description": "The number of application clients currently connected to Redis. Excludes replica connections. A sudden increase may indicate a connection leak in the application.",
+      "description": "Total client connections to Redis (active + idle). Idle connections are retained by the connection pool for ready-use and reaped after REDIS_CONN_MAX_IDLE_TIME (default: 5 minutes). A count that stays stable after load ends is normal pool behavior, not a connection leak. Excludes replica connections.",
       "type": "stat",
       "gridPos": {
         "h": 6,
@@ -100,7 +100,7 @@
     {
       "id": 2,
       "title": "Connected Clients Over Time",
-      "description": "Historical trend of Redis client connections. Useful for spotting connection leaks (steadily increasing line) or correlating client counts with load test phases.",
+      "description": "Historical trend of Redis client connections (active + idle). Idle connections are retained by the pool and reaped after REDIS_CONN_MAX_IDLE_TIME (default: 5 minutes). A count that stays stable after load ends is expected pool behavior. Connection leaks appear as unbounded growth across multiple test runs.",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
