@@ -45,6 +45,7 @@ WITH_HTML_REPORT=false
 TIER=""
 EXPLICIT_RPS=false
 EXPLICIT_DURATION=false
+COOLDOWN=15  # seconds to wait between scenarios for system recovery
 
 # Array to track result files generated during this run
 RESULT_FILES=()
@@ -219,6 +220,14 @@ parse_args() {
                 VUS="$2"
                 shift 2
                 ;;
+            --cooldown)
+                COOLDOWN="$2"
+                shift 2
+                ;;
+            --no-cooldown)
+                COOLDOWN=0
+                shift
+                ;;
             --list|-l)
                 LIST_ONLY=true
                 shift
@@ -295,6 +304,8 @@ PARAMETERS:
   -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)
   -u, --target-url <url>    API endpoint to test (default: http://localhost:8080)
   --vus <number>            Maximum virtual users (maxVUs). If omitted, auto-calculated as RPS * 2
+  --cooldown <seconds>      Seconds to wait between scenarios for system recovery (default: 15)
+  --no-cooldown             Disable cooldown between scenarios
   --with-html-report        Generate HTML report alongside JSON output
   --skip-setup              Skip service health checks before running tests
   -l, --list                List available scenarios
@@ -790,6 +801,9 @@ run_all_scenarios() {
 
     print_section "Running All Scenarios"
 
+    local scenario_count=${#SCENARIOS[@]}
+    local idx=0
+
     for key in "${!SCENARIOS[@]}"; do
         print_info "Running scenario: $key"
         ((total+=1))
@@ -797,6 +811,18 @@ run_all_scenarios() {
             ((passed+=1))
         else
             ((failed+=1))
+        fi
+        ((idx+=1))
+
+        # Cooldown between scenarios (skip after the last one)
+        if [ "$COOLDOWN" -gt 0 ] && [ "$idx" -lt "$scenario_count" ]; then
+            print_info "Cooldown: waiting ${COOLDOWN}s for system recovery..."
+            sleep "$COOLDOWN"
+            # Verify services are still healthy before next test
+            if ! curl -sf "$TARGET_URL/health" > /dev/null 2>&1; then
+                print_warning "API not responding after cooldown, waiting additional 10s..."
+                sleep 10
+            fi
         fi
     done
 
