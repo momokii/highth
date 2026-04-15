@@ -81,7 +81,7 @@ export function setup() {
 
   // Query stats endpoint to determine the live ID range
   const statsResponse = getStats();
-  let maxID = 1000000; // fallback default
+  let maxID = 100000000; // fallback default
 
   if (statsResponse.status === 200) {
     try {
