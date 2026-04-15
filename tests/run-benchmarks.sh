@@ -539,6 +539,7 @@ run_scenario() {
 
     # Run k6 test directly (no eval, no string manipulation)
     docker run --rm --network host \
+        --user "$(id -u):$(id -g)" \
         -v "$SCRIPT_DIR:/tests" \
         -v "$RESULTS_DIR:/results" \
         -e TARGET_URL="$TARGET_URL" \
