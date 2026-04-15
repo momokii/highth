@@ -1,16 +1,19 @@
-# Agent Continuity Infrastructure
+# Agent Infrastructure — Higth Project
 
-**Purpose:** This directory contains all information needed for an AI agent to continue work on this project across multiple sessions and machines.
+Go API querying 50M+ IoT sensor readings through PostgreSQL + Redis with sub-500ms latency.
+Module: `github.com/kelanach/higth`. Status: ~95% complete, maintenance/enhancement phase.
 
 ---
 
-## Quick Start for New Agents
+## Orientation Sequence
 
-1. **Read `HOW_TO_RESUME.md`** - Learn how to start working
-2. **Read `AGENT_MANIFEST.md`** - Understand current project state
-3. **Read `CODING_STANDARDS.md`** - Learn architecture patterns (CRITICAL)
-4. **Check `state/progress.json`** - See what's done/in-progress/blocked
-5. **Pick next task from `tasks/task_queue.md`**
+Read these files **in order** before starting any work:
+
+1. **This file** — project overview and file map
+2. **`AGENT_RULES.md`** — non-negotiable behavioral rules
+3. **`CODING_STANDARDS.md`** — patterns and conventions derived from actual codebase
+4. **`state/CURRENT_STATUS.md`** — what is done, what remains
+5. **`state/TASK_QUEUE.md`** — open work items
 
 ---
 
@@ -18,167 +21,71 @@
 
 ```
 .claude/
-├── README.md                    # This file - entry point
-├── AGENT_MANIFEST.md            # Single source of truth for project state
-├── CODING_STANDARDS.md          # Architecture patterns and conventions
-├── HOW_TO_RESUME.md             # Complete resume guide
-│
-├── tasks/                       # Task definitions and queue
-│   ├── task_queue.md            # Master ordered list (50 tasks)
-│   ├── phase_0_environment.md   # Phase 0 tasks
-│   ├── phase_1_database.md      # Phase 1 tasks
-│   ├── phase_2_data_generation.md
-│   ├── phase_3_api_development.md
-│   ├── phase_4_cache_integration.md
-│   ├── phase_5_load_testing.md
-│   └── phase_6_results_analysis.md
-│
-├── state/                       # Progress tracking (git-ignored)
-│   ├── progress.json            # Current progress state (machine-readable)
-│   ├── session_history.md       # Session-by-session log
-│   └── blockers.md              # Active blockers with resolutions
-│
-└── templates/                   # File templates for consistency
-    ├── go_handler_template.go
-    ├── go_service_template.go
-    ├── go_repository_template.go
-    ├── go_model_template.go
-    ├── go_config_template.go
-    ├── docker_compose_template.yml
-    └── test_runner_template.sh
+  README.md              # This file — entry point for agents
+  AGENT_RULES.md          # Non-negotiable rules for every session
+  CODING_STANDARDS.md     # Patterns and conventions (derived from real code)
+  SECURITY_STANDARDS.md   # Security audit findings + requirements
+  ENVIRONMENT_GUIDE.md    # Verified commands for all operations
+  HOW_TO_RESUME.md        # Resume protocol for new sessions
+  settings.json           # Tool permissions (git-tracked)
+  settings.local.json     # Local plugin settings
+  state/
+    CURRENT_STATUS.md     # What is done, in progress, blocked
+    TASK_QUEUE.md         # Prioritized backlog of work items
+    DECISIONS_LOG.md      # Key architectural decisions
+    .gitkeep              # Ensures directory exists in git
+  templates/
+    new_feature.md        # Feature implementation checklist
+    new_endpoint.md       # API endpoint checklist
+    new_test.md           # Test creation checklist
+    bug_fix.md            # Bug investigation and fix checklist
 ```
 
----
-
-## Critical Rules
-
-1. **ALWAYS update `state/progress.json`** after completing work
-2. **ALWAYS read `CODING_STANDARDS.md`** before writing code
-3. **ALWAYS check dependencies** before starting a task
-4. **NEVER skip verification steps**
-5. **ALWAYS document blockers** in `state/blockers.md`
+**State files** (`state/*.md`) are git-ignored — they are session-specific and updated after every session.
+**Config files** (everything else) are git-tracked — they change rarely and reflect stable project conventions.
 
 ---
 
-## Project Overview
+## Architecture
 
-**Name:** High-Performance IoT Sensor Query System
-**Type:** Portfolio-grade backend performance demonstration
-**Target:** p50 <= 500ms, p95 <= 800ms at 50M rows
-**Tech Stack:** Go 1.21+, PostgreSQL 16+, Redis 7+, chi router, pgx, Vegeta
-**Implementation:** 6 phases, 50 tasks, 13-26 hours estimated
-
----
-
-## Current Status
-
-Check `AGENT_MANIFEST.md` for:
-- Phase progress (0-100% for each of 6 phases)
-- Current task (what to work on next)
-- Environment state (tools installed, containers running)
-- Active blockers
-- Session history
-
----
-
-## Task Queue
-
-The `tasks/task_queue.md` file contains all 50 tasks ordered by dependency:
-- TASK-001 through TASK-008: Phase 0 (Environment & Tooling)
-- TASK-009 through TASK-018: Phase 1 (Database Provisioning)
-- TASK-019 through TASK-023: Phase 2 (Data Generation)
-- TASK-024 through TASK-033: Phase 3 (API Development)
-- TASK-034 through TASK-038: Phase 4 (Cache Integration)
-- TASK-039 through TASK-047: Phase 5 (Load Testing)
-- TASK-048 through TASK-050: Phase 6 (Results Analysis)
-
-Each task has:
-- ID and title
-- Status (pending/ready/in_progress/completed/blocked)
-- Dependencies (what must exist first)
-- Output definition (what "done" looks like)
-- Verification commands
-- Estimated time
-
----
-
-## Progress Tracking
-
-### `state/progress.json` (Machine-Readable)
-
-```json
-{
-  "version": "1.0",
-  "last_updated": "ISO-8601 timestamp",
-  "current_phase": "Phase X: Name",
-  "phase_progress": { /* 6 phases */ },
-  "tasks": { /* TASK-001 through TASK-050 */ },
-  "blockers": [],
-  "next_task": "TASK-XXX"
-}
+```
+Request → Handler → Service → Repository → PostgreSQL
+                    ↓
+                   Cache (Redis, cache-aside)
 ```
 
-### `state/session_history.md` (Human-Readable)
+- **Handler** (`internal/handler/`): HTTP concerns only — request parsing, response formatting, status codes
+- **Service** (`internal/service/`): Business logic, cache orchestration, input validation
+- **Repository** (`internal/repository/`): PostgreSQL queries only (pgx/v5, parameterized)
+- **Cache** (`internal/cache/`): Redis operations (go-redis/v9, 30s TTL, LRU eviction)
+- **Config** (`internal/config/`): Environment variable loading via godotenv
 
-Logs each session with:
-- Date/time and agent ID
-- Tasks completed
-- Issues encountered
-- Time spent
-
-### `state/blockers.md`
-
-Tracks:
-- Active blockers with proposed resolutions
-- Resolved blockers with outcomes
+Full details: `docs/architecture.md`
 
 ---
 
-## Documentation Reference
+## Key Facts
 
-**Existing Project Documentation:**
-- `docs/README.md` - Project overview
-- `docs/architecture.md` - Database schema, indexing, caching
-- `docs/api-spec.md` - API contract
-- `docs/implementation/plan.md` - 6-phase implementation plan
-
-**Agent Infrastructure (this folder):**
-- `CODING_STANDARDS.md` - Architecture patterns, naming conventions
-- `HOW_TO_RESUME.md` - Resume guide for new/resuming agents
-
----
-
-## Before Starting Any Task
-
-1. Read the task file completely (understand what "done" looks like)
-2. Check dependencies (ensure prerequisite tasks are complete)
-3. Verify environment (run the phase's verification commands)
-4. Check for blockers (read `state/blockers.md`)
+| Fact | Detail |
+|------|--------|
+| Module path | `github.com/kelanach/higth` ("higth" not "highth") |
+| Go version | 1.25.7 |
+| Testing tool | k6 (via Docker) — **not Vegeta** |
+| Database | PostgreSQL 16 with BRIN + covering indexes, materialized views |
+| Cache | Redis 7, cache-aside in service layer, 30s TTL |
+| Migration gap | No 003 migration — gap is intentional |
+| Unit tests | None — all testing is k6 benchmarks |
+| Auth | None — portfolio project (by design) |
 
 ---
 
-## After Completing Any Task
+## Key Documentation
 
-1. Run verification commands (ensure everything works)
-2. Update `state/progress.json` (mark task as completed)
-3. Update `AGENT_MANIFEST.md` (update phase progress)
-4. Log the session in `state/session_history.md`
-5. Document any issues in `state/blockers.md` (if needed)
-
----
-
-## Getting Unstuck
-
-If you encounter a blocker:
-
-1. Re-read the documentation (answer is usually there)
-2. Check the task details (look for troubleshooting sections)
-3. Review session history (see how similar issues were resolved)
-4. Document the blocker (create entry in `state/blockers.md`)
-5. Ask the user (if you can't proceed, explain clearly)
-
----
-
-**Infrastructure Version:** 1.0
-**Last Updated:** 2026-03-11
-**Compatible With:** Claude Code agents on any platform
+| Doc | Path | Content |
+|-----|------|---------|
+| API Spec | `docs/api-spec.md` | All endpoints with request/response examples |
+| Architecture | `docs/architecture.md` | Schema design, indexing strategy, caching |
+| Testing | `docs/testing.md` | Test plan and scenario descriptions |
+| Future Enhancements | `docs/future-enhancements/` | Planned features with specs |
+| Quick Start | `README.md` (project root) | 15-minute setup guide |
+| Agent Context | `CLAUDE.md` (project root) | Auto-discovered lightweight project reference |
