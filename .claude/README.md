@@ -10,10 +10,12 @@ Module: `github.com/kelanach/higth`. Status: ~95% complete, maintenance/enhancem
 Read these files **in order** before starting any work:
 
 1. **This file** — project overview and file map
-2. **`AGENT_RULES.md`** — non-negotiable behavioral rules
-3. **`CODING_STANDARDS.md`** — patterns and conventions derived from actual codebase
-4. **`state/CURRENT_STATUS.md`** — what is done, what remains
-5. **`state/TASK_QUEUE.md`** — open work items
+2. **`HOW_TO_RESUME.md`** — step-by-step resume protocol with real commands
+3. **`AGENT_RULES.md`** — non-negotiable behavioral rules
+4. **`CODING_STANDARDS.md`** — patterns and conventions derived from actual codebase
+5. **`SECURITY_STANDARDS.md`** — security audit findings + requirements
+6. **`state/CURRENT_STATUS.md`** — what is done, what remains
+7. **`state/TASK_QUEUE.md`** — open work items
 
 ---
 
@@ -22,13 +24,13 @@ Read these files **in order** before starting any work:
 ```
 .claude/
   README.md              # This file — entry point for agents
+  HOW_TO_RESUME.md       # Step-by-step resume protocol for new sessions
   AGENT_RULES.md          # Non-negotiable rules for every session
   CODING_STANDARDS.md     # Patterns and conventions (derived from real code)
   SECURITY_STANDARDS.md   # Security audit findings + requirements
   ENVIRONMENT_GUIDE.md    # Verified commands for all operations
-  HOW_TO_RESUME.md        # Resume protocol for new sessions
   settings.json           # Tool permissions (git-tracked)
-  settings.local.json     # Local plugin settings
+  settings.local.json     # Local plugin settings (user-owned, not modified)
   state/
     CURRENT_STATUS.md     # What is done, in progress, blocked
     TASK_QUEUE.md         # Prioritized backlog of work items
@@ -79,13 +81,35 @@ Full details: `docs/architecture.md`
 
 ---
 
+## Security Note
+
+**Posture: YELLOW** — minor issues acceptable for portfolio scope, not production-ready.
+
+This is a portfolio project running locally. No authentication, no rate limiting, containers run as root, and DB connections use `sslmode=disable`. These are accepted by design for local development but must be addressed before any production deployment.
+
+Full audit findings and production readiness checklist: **`SECURITY_STANDARDS.md`**
+
+---
+
+## Where to Find Current State
+
+| File | Purpose |
+|------|---------|
+| `state/CURRENT_STATUS.md` | What's complete, in progress, blocked, and known issues |
+| `state/TASK_QUEUE.md` | Prioritized backlog — 14 tasks across testing, security, infrastructure |
+| `state/DECISIONS_LOG.md` | 10 architectural decisions that prevent breaking changes |
+
+---
+
 ## Key Documentation
 
 | Doc | Path | Content |
 |-----|------|---------|
+| Quick Start | `README.md` (project root) | 15-minute setup guide |
+| Agent Context | `CLAUDE.md` (project root) | Auto-discovered lightweight project reference |
 | API Spec | `docs/api-spec.md` | All endpoints with request/response examples |
 | Architecture | `docs/architecture.md` | Schema design, indexing strategy, caching |
 | Testing | `docs/testing.md` | Test plan and scenario descriptions |
-| Future Enhancements | `docs/future-enhancements/` | Planned features with specs |
-| Quick Start | `README.md` (project root) | 15-minute setup guide |
-| Agent Context | `CLAUDE.md` (project root) | Auto-discovered lightweight project reference |
+| Future Enhancements | `docs/future-enhancements/` | Planned features with specs (Nginx, JSONB, partitioning, schema fixes) |
+| Implementation Guides | `docs/implementation/` | Step-by-step implementation docs |
+| High-Throughput Guide | `docs/high-throughput-guide/` | Production performance optimization |

@@ -1,29 +1,64 @@
 # How to Resume — Higth Project
 
-Protocol for agents starting or resuming work on this project.
+Step-by-step protocol for agents starting or resuming work on this project.
 
 ---
 
-## New Session (3 minutes)
+## Step 1: Read `.claude/README.md`
+Orient yourself: understand the project, stack, architecture, and file organization.
 
-1. Read `state/CURRENT_STATUS.md` — understand what is done and what remains
-2. Read `state/TASK_QUEUE.md` — find open work items
-3. Read `AGENT_RULES.md` — re-internalize behavioral rules before touching code
-4. Read `CODING_STANDARDS.md` — re-internalize conventions before writing code
-5. Verify environment:
+## Step 2: Read `.claude/state/CURRENT_STATUS.md`
+Know exactly what is done, in progress, and blocked.
+
+## Step 3: Read `.claude/state/TASK_QUEUE.md`
+Identify the next task and confirm its dependencies are met.
+
+## Step 4: Read `.claude/AGENT_RULES.md`
+Re-internalize all behavioral rules before touching anything.
+
+## Step 5: Read `.claude/CODING_STANDARDS.md`
+Re-internalize all conventions before writing any code.
+
+## Step 6: Read `.claude/SECURITY_STANDARDS.md`
+Re-internalize all security requirements before writing any code.
+
+## Step 7: Identify the active environment
+This project operates in **development only**. If staging or production is ever added, consult `ENVIRONMENT_GUIDE.md` for environment-specific behavior.
+
+## Step 8: Read task-relevant docs
+PRD section, architecture doc, API contract, or any doc directly relevant to the current task. Key docs:
+- API spec: `docs/api-spec.md`
+- Architecture: `docs/architecture.md`
+- Testing: `docs/testing.md`
+- Future enhancements: `docs/future-enhancements/`
+
+## Step 9: Verify the environment is functional
 
 ```bash
 # Check services are running
 docker compose ps
 
-# Health check
+# Health check (DB + Redis with latency)
 curl -s http://localhost:8080/health | jq .
 
-# Build check
+# If services aren't running, start them:
+# docker network create highth-network 2>/dev/null
+# docker compose up -d --build
+```
+
+See `ENVIRONMENT_GUIDE.md` for full setup commands.
+
+## Step 10: Confirm no regressions
+
+```bash
+# Build must succeed before writing any code
 go build ./cmd/api
 ```
 
-If services aren't running, see `ENVIRONMENT_GUIDE.md` for setup commands.
+If this fails, diagnose and fix before proceeding with any task.
+
+## Step 11: Begin the task
+Implement → test → security review → update `.claude/` state files → report to user.
 
 ---
 
@@ -44,9 +79,12 @@ If services aren't running, see `ENVIRONMENT_GUIDE.md` for setup commands.
 
 1. Verify: `go build ./cmd/api` succeeds
 2. Run smoke benchmark if relevant: `./tests/run-benchmarks.sh --tier smoke`
-3. Update `state/CURRENT_STATUS.md` with what changed
+3. Update `state/CURRENT_STATUS.md` with what changed and new date
 4. Update `state/TASK_QUEUE.md` — mark task as done
 5. Log decisions in `state/DECISIONS_LOG.md` if significant
+6. Update `CODING_STANDARDS.md` if new patterns were established
+7. Update `SECURITY_STANDARDS.md` if new security findings emerged
+8. Update `ENVIRONMENT_GUIDE.md` if environment config changed
 
 ---
 

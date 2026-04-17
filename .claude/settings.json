@@ -1,3 +1,43 @@
 {
-  "enabledPlugins": {}
+  "enabledPlugins": {},
+  "permissions": {
+    "allow": [
+      "Read(**)",
+      "Write(**)",
+      "Edit(**)",
+      "Bash(git:*)",
+      "Bash(go build:*)",
+      "Bash(go test:*)",
+      "Bash(go vet:*)",
+      "Bash(go fmt:*)",
+      "Bash(go mod:*)",
+      "Bash(go run:*)",
+      "Bash(go version:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(python3:*)",
+      "Bash(curl:*)",
+      "Bash(jq:*)",
+      "Bash(./tests/run-benchmarks.sh:*)",
+      "Bash(./scripts/run_migrations.sh:*)",
+      "Bash(chmod:*)",
+      "Bash(redis-cli:*)",
+      "Bash(ls:*)",
+      "Bash(tree:*)",
+      "Bash(bash:*)",
+      "Bash(echo:*)",
+      "Bash(set:*)",
+      "Bash(timeout:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(psql:*)",
+      "Bash(command -v:*)",
+      "Bash(wc:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /)",
+      "Bash(sudo rm:*)",
+      "Bash(chmod 777:*)"
+    ]
+  }
 }
