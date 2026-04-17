@@ -20,6 +20,10 @@ import random
 import sys
 import time
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load variables from .env
+load_dotenv()
 
 import psycopg2
 
@@ -104,7 +108,7 @@ def generate_batch_csv(device_ids, batch_size, time_start, time_end):
 
 def main():
     # Get database connection
-    db_url = os.getenv("DATABASE_URL", "postgres://sensor_user:sensor_password@localhost:5434/sensor_db")
+    db_url = os.getenv("DATABASE_URL", "postgres://sensor_user:CHANGE_ME_POSTGRES_PASSWORD@localhost:5434/sensor_db")
 
     print("=" * 70)
     print("Fast IoT Sensor Data Generator")

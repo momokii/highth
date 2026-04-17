@@ -93,9 +93,25 @@ Key schema optimizations:
 
 - **Docker network**: `highth-network` is external — must create before `docker compose up`
 - **Module name**: `github.com/kelanach/higth` (note: "higth" not "highth")
-- **No Go unit tests**: all testing via k6 load benchmarks in `tests/`
+- **Docker runs as non-root**: API container uses `appuser` (UID 1000) — `COPY --chown` in Dockerfile
+- **Interface-based DI**: Service accepts `repository.Querier` and `cache.Cache` interfaces; handlers accept `service.SensorServicer` interface
 - **Cache-aside pattern**: service checks Redis first, falls back to DB, populates cache. Stats endpoint bypasses cache (reads MV directly)
 - **ID as string**: `SensorReading.ID` is stored as `string` in JSON responses (converted from `int64` in repository)
 - **Device ID validation**: alphanumeric + hyphens + underscores, max 50 chars
 - **Cache scenario**: benchmark runner auto-flushes Redis before cache tests for cold start
 - **Stats device count**: uses TABLESAMPLE SYSTEM (0.5%) for estimation, falls back to MV sum
+
+## Testing
+
+```bash
+# Run all Go unit tests
+go test ./internal/... -v
+
+# Run with race detection
+go test ./internal/... -race
+
+# Run linting
+golangci-lint run ./...
+```
+
+Go unit tests use standard library `testing` package with table-driven patterns. Mocks implement interfaces from `repository/interface.go`, `cache/interface.go`, and `service/interface.go`.

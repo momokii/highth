@@ -24,8 +24,8 @@ var (
 
 // SensorService handles business logic for sensor readings.
 type SensorService struct {
-	repo  *repository.SensorRepository
-	cache *cache.RedisCache
+	repo  repository.Querier
+	cache cache.Cache
 }
 
 // Config holds service configuration.
@@ -34,7 +34,7 @@ type Config struct {
 }
 
 // New creates a new SensorService.
-func New(repo *repository.SensorRepository, cache *cache.RedisCache, cfg Config) *SensorService {
+func New(repo repository.Querier, cache cache.Cache, cfg Config) *SensorService {
 	return &SensorService{
 		repo:  repo,
 		cache: cache,
@@ -167,7 +167,7 @@ func (s *SensorService) isValidReadingType(readingType string) bool {
 	}
 	// Check if alphanumeric only
 	for _, r := range readingType {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
 			return false
 		}
 	}

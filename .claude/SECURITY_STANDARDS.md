@@ -25,10 +25,10 @@ These issues exist and are accepted for the portfolio project scope:
 | No CORS configuration | Medium | No CORS headers set on responses. |
 | No security headers | Medium | Missing X-Content-Type-Options, X-Frame-Options, CSP, HSTS. |
 | sslmode=disable on DB connections | High | All database traffic unencrypted within Docker network. |
-| Docker runs as root | High | WORKDIR /root/ in Dockerfile. No non-root USER directive. |
-| No .dockerignore file | Medium | Risk of .env or sensitive files being included in Docker image. |
+| Docker runs as root | ~~High~~ **RESOLVED** | Now runs as `appuser` (UID 1000) with `USER` directive in Dockerfile. |
+| No .dockerignore file | ~~Medium~~ **RESOLVED** | `.dockerignore` created excluding `.env`, `.git`, docs, test-results. |
 | Redis has no password | Medium | Redis accessible without authentication within Docker network. |
-| Weak default passwords | Medium | .env.example uses `sensor_password`, Grafana uses `admin/admin`. |
+| Weak default passwords | ~~Medium~~ **RESOLVED** | Replaced with `CHANGE_ME_POSTGRES_PASSWORD` and `CHANGE_ME_GRAFANA_PASSWORD` placeholders. |
 | Monitoring ports exposed to 0.0.0.0 | Medium | Prometheus (9090), Grafana (3000), exporters (9187, 9121) bound to all interfaces. Should be `127.0.0.1` only. |
 
 ### Security Strengths (Preserve These)
@@ -52,8 +52,8 @@ These issues exist and are accepted for the portfolio project scope:
 
 | Finding | Severity | Detail |
 |---------|----------|--------|
-| API container runs as root | High | Dockerfile uses `WORKDIR /root/` with no `USER` directive. If compromised, attacker has root access. |
-| No .dockerignore | Medium | No file exists. Risk of `.env`, `.git`, docs, and test-results being included in image. |
+| API container runs as root | ~~High~~ **RESOLVED** | Dockerfile now uses `appuser` (UID 1000) with `USER` directive and `COPY --chown`. |
+| No .dockerignore | ~~Medium~~ **RESOLVED** | `.dockerignore` created excluding `.env`, `.git`, docs, test-results, `.claude/`. |
 | Monitoring ports on 0.0.0.0 | Medium | Prometheus `9090:9090`, Grafana `3000:3000`, postgres-exporter `9187:9187`, redis-exporter `9121:9121` all bound to all interfaces. |
 | DB/Redis ports on 0.0.0.0 | Medium | PostgreSQL `5434:5432`, Redis `6379:6379` exposed to all interfaces. Should be `127.0.0.1` only for local dev. |
 | sslmode=disable | High | All DATABASE_URL connections use `sslmode=disable`. Unencrypted within Docker network. |

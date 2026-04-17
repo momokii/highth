@@ -21,10 +21,16 @@ FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates wget
 
-WORKDIR /root/
+# Create non-root user
+RUN addgroup -g 1000 -S appgroup && adduser -u 1000 -S appuser -G appgroup
 
-# Copy the binary from builder
-COPY --from=builder /app/main .
+WORKDIR /app
+
+# Copy the binary from builder with proper ownership
+COPY --from=builder --chown=appuser:appgroup /app/main .
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8080

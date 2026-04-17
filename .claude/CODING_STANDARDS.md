@@ -28,9 +28,9 @@ internal/model/          → Data structures (no logic)
 | `cmd/api` | `main.go` | Entrypoint, router setup, graceful shutdown |
 | `config` | `config.go` | `Load()` → `*Config` from env vars |
 | `handler` | `sensor_handler.go`, `health_handler.go` | HTTP parsing, response formatting |
-| `service` | `sensor_service.go` | Business logic, cache-aside, validation |
-| `repository` | `sensor_repo.go` | Parameterized SQL queries, pool management |
-| `cache` | `redis_cache.go` | Get/Set/Delete/FlushAll with JSON serialization |
+| `service` | `sensor_service.go`, `interface.go` | Business logic, cache-aside, validation. `SensorServicer` interface for mocking. |
+| `repository` | `sensor_repo.go`, `interface.go` | Parameterized SQL queries, pool management. `Querier` interface for mocking. |
+| `cache` | `redis_cache.go`, `interface.go` | Get/Set/Delete/FlushAll with JSON serialization. `Cache` interface for mocking. |
 | `model` | `sensor.go`, `health.go` | Structs with JSON tags |
 | `middleware` | `compression.go`, `metrics.go`, `prometheus.go` | Chi middleware |
 
@@ -264,4 +264,11 @@ Go version: 1.25.7
 ## Testing
 
 - **Benchmark testing**: k6 via Docker. Scenarios in `tests/scenarios/`. Run via `tests/run-benchmarks.sh`.
-- **Go unit tests**: None exist yet. When adding: table-driven with `t.Run()`, mock interfaces for repository/cache.
+- **Go unit tests**: 108 tests across service and handler layers. Standard library only (no testify).
+  - Pattern: Table-driven with `t.Run()` for each case
+  - Mocks: Simple struct mocks with function fields implementing interfaces
+  - Interfaces: `repository.Querier`, `cache.Cache`, `service.SensorServicer`
+  - Run: `go test ./internal/... -v`
+  - Run with race: `go test ./internal/... -race`
+- **Linting**: `golangci-lint run ./...` — must pass clean before committing
+- **CI**: GitHub Actions runs go vet, golangci-lint, go test, go build on every push/PR

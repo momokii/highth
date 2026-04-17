@@ -60,7 +60,7 @@ services:
       - ./configs/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: ${GF_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_ADMIN_PASSWORD:-CHANGE_ME_GRAFANA_PASSWORD}
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_SERVER_ROOT_URL: ${GF_ROOT_URL:-http://localhost:3000}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
@@ -89,7 +89,7 @@ services:
     ports:
       - "9187:9187"
     environment:
-      DATA_SOURCE_NAME: postgres://sensor_user:${POSTGRES_PASSWORD:-sensor_password}@highth-postgres:5432/sensor_db?sslmode=disable
+      DATA_SOURCE_NAME: postgres://sensor_user:${POSTGRES_PASSWORD:-CHANGE_ME_POSTGRES_PASSWORD}@highth-postgres:5432/sensor_db?sslmode=disable
       PG_EXPORTER_DISABLE_DEFAULT_METRICS: "false"
       PG_EXPORTER_DISABLE_SETTINGS_METRICS: "false"
       PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"

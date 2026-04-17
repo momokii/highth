@@ -23,6 +23,10 @@ import random
 import sys
 import time
 from datetime import datetime, timedelta
+from dotenv import load_dotenv
+
+# Load variables from .env
+load_dotenv()
 
 import psycopg2
 
@@ -246,7 +250,7 @@ def recreate_indexes(cursor, conn):
 
 def main():
     # Get database connection
-    db_url = os.getenv("DATABASE_URL", "postgres://sensor_user:sensor_password@localhost:5434/sensor_db")
+    db_url = os.getenv("DATABASE_URL", "postgres://sensor_user:CHANGE_ME_POSTGRES_PASSWORD@localhost:5434/sensor_db")
 
     print("=" * 70)
     print("Bulk IoT Sensor Data Generator (with Index Optimization)")

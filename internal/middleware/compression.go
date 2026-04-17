@@ -29,7 +29,7 @@ func (w *gzipResponseWriter) WriteHeader(statusCode int) {
 
 // Flush flushes the gzip writer and the underlying response writer.
 func (w *gzipResponseWriter) Flush() {
-	w.gzipWriter.Flush()
+	_ = w.gzipWriter.Flush()
 	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -37,7 +37,7 @@ func (w *gzipResponseWriter) Flush() {
 
 // Close closes the gzip writer.
 func (w *gzipResponseWriter) Close() {
-	w.gzipWriter.Close()
+	_ = w.gzipWriter.Close()
 }
 
 // GzipMiddleware returns a middleware that compresses HTTP responses using gzip.

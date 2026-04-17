@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+.claude
+docs
+test-results
+*.md
+!README.md
+Dockerfile
+docker-compose*.yml
+bin/
+api
+*.test
+*.out

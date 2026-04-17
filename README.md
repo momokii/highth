@@ -50,9 +50,11 @@ IoT sensor telemetry is the **ideal test case** because it's:
 - ✅ Optimized database schema (BRIN, MVs, covering indexes)
 - ✅ Redis caching layer (LRU, TTL, cache-aside pattern)
 - ✅ Health checks and Prometheus metrics
-- ✅ Comprehensive testing (k6 scenarios)
+- ✅ Comprehensive testing (108 Go unit tests + k6 load benchmarks)
+- ✅ CI/CD pipeline (GitHub Actions: vet, lint, test, build)
 - ✅ Migration system with tracking
-- ✅ Docker orchestration
+- ✅ Docker orchestration (non-root container)
+- ✅ golangci-lint clean (0 issues)
 
 **What's NOT included (add if needed):**
 - ❌ Authentication/authorization (domain-specific)
@@ -94,6 +96,7 @@ highth/
 │
 ├── internal/                   # Private application code (not importable by other apps)
 │   ├── cache/                  # Caching layer
+│   │   ├── interface.go        # Cache interface (for mocking)
 │   │   └── redis_cache.go      # Redis cache implementation (LRU, TTL)
 │   │
 │   ├── config/                 # Configuration management
@@ -101,7 +104,9 @@ highth/
 │   │
 │   ├── handler/                # HTTP request handlers (controllers)
 │   │   ├── health_handler.go   # Health check endpoint
-│   │   └── sensor_handler.go   # Sensor readings & stats endpoints
+│   │   ├── health_handler_test.go  # Health handler unit tests
+│   │   ├── sensor_handler.go   # Sensor readings & stats endpoints
+│   │   └── sensor_handler_test.go  # Sensor handler unit tests
 │   │
 │   ├── middleware/             # HTTP middleware
 │   │   ├── compression.go      # Gzip response compression
@@ -113,10 +118,13 @@ highth/
 │   │   └── sensor.go           # Sensor reading & stats models
 │   │
 │   ├── repository/             # Database access layer
+│   │   ├── interface.go        # Querier interface (for mocking)
 │   │   └── sensor_repo.go      # PostgreSQL queries & operations
 │   │
 │   └── service/                # Business logic layer
-│       └── sensor_service.go   # Sensor data processing & caching logic
+│       ├── interface.go        # SensorServicer interface (for mocking)
+│       ├── sensor_service.go   # Sensor data processing & caching logic
+│       └── sensor_service_test.go  # Service unit tests (81 tests)
 │
 ├── scripts/                    # Utility scripts
 │   ├── schema/                 # Database schema & migrations
@@ -171,7 +179,8 @@ highth/
 │   └── generate_data           # Compiled data generator binary
 │
 ├── docker-compose.yml          # Docker services (postgres, redis, api)
-├── Dockerfile                  # API container build definition
+├── Dockerfile                  # API container build (non-root, multi-stage)
+├── .dockerignore               # Excludes .env, .git, docs from image
 ├── .env                        # Environment variables (not in git)
 ├── .env.example                # Environment variables template
 ├── go.mod                      # Go module definition
@@ -197,7 +206,7 @@ highth/
 | File | Purpose | Description |
 |------|---------|-------------|
 | **`docker-compose.yml`** | Container Orchestration | Defines 3 services: `api` (built from Dockerfile), `postgres` (PostgreSQL 16), and `redis` (Redis 7). Configures networking, volumes, and health checks. |
-| **`Dockerfile`** | Container Build | Multi-stage build for the API. Stage 1: Build Go binary. Stage 2: Minimal Alpine image with only the binary. Results in ~20MB image. |
+| **`Dockerfile`** | Container Build | Multi-stage build for the API. Stage 1: Build Go binary. Stage 2: Minimal Alpine image with only the binary, running as non-root `appuser`. Results in ~20MB image. |
 | **`.env`** | Environment Config | Contains sensitive configuration (database passwords, Redis settings). NOT in git. Use `.env.example` as template. |
 | **`go.mod`** | Go Dependencies | Lists all Go module dependencies. Defines the module path and required Go version (1.21+). |
 | **`generate_data_fast.py`** | Data Generator | Fast data generator using PostgreSQL COPY command. Generates 100,000+ rows/sec. Creates realistic IoT sensor data with Zipf distribution. |
@@ -250,7 +259,7 @@ This is a **portfolio-quality demonstration** that proves PostgreSQL can handle 
 
 | Component | Technology | Why This Choice |
 |-----------|-----------|-----------------|
-| **API** | Go 1.21+ | Goroutines handle 10K+ concurrent connections; pgx driver uses binary protocol for faster queries; 20MB Docker image |
+| **API** | Go 1.25+ | Goroutines handle 10K+ concurrent connections; pgx driver uses binary protocol for faster queries; 20MB Docker image |
 | **Database** | PostgreSQL 16 | BRIN indexes (perfect for time-series), materialized views (pre-computed aggregations), declarative partitioning-ready |
 | **Cache** | Redis 7 | LRU eviction keeps hot keys cached; 30s TTL balances freshness vs performance; cache-aside pattern is resilient to failures |
 | **Pool** | pgx built-in | Connection pooling directly in the Go application; 50 max connections with 10 min idle timeout; no separate PgBouncer needed |
@@ -280,8 +289,11 @@ This is a **portfolio-quality demonstration** that proves PostgreSQL can handle 
 # 1. Copy environment template
 cp .env.example .env
 
+# IMPORTANT: Edit .env and set real passwords before starting services
+# Change POSTGRES_PASSWORD and GF_ADMIN_PASSWORD from CHANGE_ME_* values
+
 # 2. Start all services (PostgreSQL, Redis, API)
-docker-compose up -d
+docker compose up -d
 
 # 3. Wait for services to be healthy (30 seconds)
 docker-compose ps
@@ -519,12 +531,11 @@ docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dmv"
 # Copy environment template
 cp .env.example .env
 
-# Edit if needed (defaults work for most cases)
+# Edit if needed (set real passwords before starting)
 # .env includes:
-# - POSTGRES_PASSWORD=sensor_password (change for production)
-# - POSTGRES_PORT=5434 (avoids conflict with local PostgreSQL)
-# - REDIS_PORT=6380 (avoids conflict with local Redis)
-# - API_PORT=8080
+# - POSTGRES_PASSWORD (set from CHANGE_ME_* placeholder)
+# - GF_ADMIN_PASSWORD (set from CHANGE_ME_* placeholder)
+# - DATABASE_URL (update to match your POSTGRES_PASSWORD)
 ```
 
 **Step 2: Start Services**
@@ -1366,7 +1377,7 @@ docker compose -f compose.monitoring.yml up -d
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Grafana | http://localhost:3000 | admin/admin |
+| Grafana | http://localhost:3000 | admin / (set `GF_ADMIN_PASSWORD` in `.env`) |
 | Prometheus | http://localhost:9090 | N/A (read-only) |
 
 ### Dashboards
@@ -1823,11 +1834,12 @@ The `docs/implementation/` folder contains detailed guides for:
 
 ### Key Takeaways
 
-1. **Clean Architecture**: Separation of concerns with handler/service/repository layers
-2. **Production-Ready**: Docker-based deployment with health checks and auto-restart
+1. **Clean Architecture**: Separation of concerns with handler/service/repository layers, interface-based dependency injection
+2. **Production-Ready**: Docker-based deployment with health checks, non-root container, auto-restart
 3. **High Performance**: BRIN indexes, materialized views, Redis caching
 4. **Observable**: Prometheus metrics for monitoring
-5. **Well-Documented**: Comprehensive docs for setup and experimentation
+5. **Well-Tested**: 108 Go unit tests + k6 load benchmarks + CI/CD pipeline
+6. **Well-Documented**: Comprehensive docs for setup and experimentation
 
 ### Next Steps
 
@@ -1841,4 +1853,4 @@ The `docs/implementation/` folder contains detailed guides for:
 
 **Happy Experimenting!**
 
-*Last Updated: 2026-03-18* | *Version: 1.0.0*
+*Last Updated: 2026-04-17* | *Version: 1.1.0*

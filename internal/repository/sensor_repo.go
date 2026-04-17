@@ -70,7 +70,7 @@ func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int
 
 	var query string
 	var args []interface{}
-	var argIdx int = 1
+	var argIdx = 1
 
 	// Build base query
 	baseQuery := `

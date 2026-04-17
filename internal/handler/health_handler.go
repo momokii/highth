@@ -13,11 +13,11 @@ import (
 
 // HealthHandler handles HTTP requests for health checks.
 type HealthHandler struct {
-	service *service.SensorService
+	service service.SensorServicer
 }
 
 // NewHealthHandler creates a new health handler.
-func NewHealthHandler(service *service.SensorService) *HealthHandler {
+func NewHealthHandler(service service.SensorServicer) *HealthHandler {
 	return &HealthHandler{service: service}
 }
 
@@ -72,7 +72,7 @@ func (h *HealthHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Response-Time", fmt.Sprintf("%d", time.Since(start).Milliseconds()))
 	w.WriteHeader(httpStatus)
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // GetReadiness handles GET /health/ready
@@ -84,12 +84,12 @@ func (h *HealthHandler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	// Service is ready if database is healthy
 	if results["database"] != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"status": "not ready"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "not ready"})
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
 // GetLiveness handles GET /health/live
@@ -97,5 +97,5 @@ func (h *HealthHandler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 // It returns 200 if the service is alive (always returns 200).
 func (h *HealthHandler) GetLiveness(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
 }

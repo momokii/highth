@@ -24,11 +24,11 @@ type ErrorDetails struct {
 
 // SensorHandler handles HTTP requests for sensor readings.
 type SensorHandler struct {
-	service *service.SensorService
+	service service.SensorServicer
 }
 
 // NewSensorHandler creates a new sensor handler.
-func NewSensorHandler(service *service.SensorService) *SensorHandler {
+func NewSensorHandler(service service.SensorServicer) *SensorHandler {
 	return &SensorHandler{service: service}
 }
 
@@ -226,7 +226,7 @@ func (h *SensorHandler) writeResponse(w http.ResponseWriter, r *http.Request, st
 	}
 
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 // writeError writes an error response in JSON format.
@@ -258,7 +258,7 @@ func (h *SensorHandler) writeError(w http.ResponseWriter, r *http.Request, statu
 	}
 
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(errorResp)
+	_ = json.NewEncoder(w).Encode(errorResp)
 }
 
 // handleServiceError maps service errors to HTTP status codes.

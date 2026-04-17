@@ -43,3 +43,6 @@ data/
 .claude/state/*.json
 .claude/state/*.md
 !/.claude/state/.gitkeep
+
+# Python cache
+__pycache__/

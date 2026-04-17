@@ -28,6 +28,10 @@ import argparse
 import os
 import sys
 import re
+from dotenv import load_dotenv
+
+# Load variables from .env
+load_dotenv()
 
 import psycopg2
 
@@ -270,7 +274,7 @@ def verify_indexes(db_url=None, verbose=False):
     """
     # Default database URL
     if db_url is None:
-        db_url = os.getenv("DATABASE_URL", "postgres://sensor_user:sensor_password@localhost:5434/sensor_db")
+        db_url = os.getenv("DATABASE_URL", "postgres://sensor_user:CHANGE_ME_POSTGRES_PASSWORD@localhost:5434/sensor_db")
 
     # Connect to database
     conn = psycopg2.connect(db_url)
@@ -322,7 +326,7 @@ Exit codes:
         '--db-url',
         type=str,
         default=None,
-        help='PostgreSQL connection URL (default: DATABASE_URL env var or postgres://sensor_user:sensor_password@localhost:5434/sensor_db)'
+        help='PostgreSQL connection URL (default: DATABASE_URL env var or postgres://sensor_user:CHANGE_ME_POSTGRES_PASSWORD@localhost:5434/sensor_db)'
     )
 
     parser.add_argument(

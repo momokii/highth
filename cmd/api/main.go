@@ -57,7 +57,7 @@ func main() {
 		// Continue without cache
 		redisCache = &cache.RedisCache{}
 	}
-	defer redisCache.Close()
+	defer func() { _ = redisCache.Close() }()
 
 	// Initialize service
 	sensorService := service.New(repo, redisCache, service.Config{
