@@ -96,6 +96,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
+	r.Use(higthmiddleware.CORSMiddleware)
 	r.Use(higthmiddleware.SecurityHeadersMiddleware)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Timeout(cfg.RequestTimeout))
