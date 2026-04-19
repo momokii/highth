@@ -1,0 +1,356 @@
+openapi: 3.0.0
+info:
+  title: Higth - IoT Sensor Query API
+  version: 1.1.0
+  description: >
+    High-performance API for querying 50M+ IoT sensor readings through
+    PostgreSQL + Redis with sub-500ms latency.
+
+servers:
+  - url: http://localhost:8080
+    description: Development server
+
+paths:
+  /api/v1/sensor-readings:
+    get:
+      summary: Query sensor readings
+      description: >
+        Unified endpoint supporting two mutually exclusive modes:
+        - Device query: Provide device_id to get readings for a device (with optional filters)
+        - PK lookup: Provide id to get a single reading by primary key.
+        Exactly one of id or device_id must be provided.
+      operationId: getSensorReadings
+      parameters:
+        - name: id
+          in: query
+          description: Primary key ID for single-row lookup (mutually exclusive with device_id)
+          schema:
+            type: integer
+            minimum: 1
+        - name: device_id
+          in: query
+          description: Device identifier (mutually exclusive with id)
+          schema:
+            type: string
+            maxLength: 50
+            pattern: "^[a-zA-Z0-9_-]+$"
+        - name: limit
+          in: query
+          description: Max readings to return (device query mode only)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 10
+        - name: reading_type
+          in: query
+          description: Filter by reading type (device query mode only)
+          schema:
+            type: string
+            maxLength: 30
+        - name: from
+          in: query
+          description: Start of time range (ISO 8601 / RFC3339)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: End of time range (ISO 8601 / RFC3339)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Successful response
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+              description: Unique request identifier
+            X-Response-Time:
+              schema:
+                type: string
+              description: Response time in milliseconds
+            X-Cache-Status:
+              schema:
+                type: string
+                enum: [HIT, MISS, BYPASS]
+              description: Cache hit/miss status
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/DeviceQueryResponse"
+                  - $ref: "#/components/schemas/PKLookupResponse"
+        "400":
+          description: Invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Device or reading not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/stats:
+    get:
+      summary: Get database statistics
+      description: >
+        Returns aggregated statistics from materialized views (bypasses cache).
+        Includes row counts, device counts, and reading type distributions.
+      operationId: getStats
+      responses:
+        "200":
+          description: Statistics response
+          headers:
+            X-Request-ID:
+              schema:
+                type: string
+            X-Response-Time:
+              schema:
+                type: string
+            X-Cache-Status:
+              schema:
+                type: string
+                enum: [BYPASS]
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatsResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /health:
+    get:
+      summary: Full health check
+      description: >
+        Returns the health status of the service and its dependencies (database, Redis).
+        Overall status is "healthy", "degraded" (cache down), or "unhealthy" (database down).
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "503":
+          description: Service is degraded or unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /health/ready:
+    get:
+      summary: Readiness check
+      description: Returns 200 if the service is ready to accept requests (database is healthy).
+      operationId: getReadiness
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ready"
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "not ready"
+
+  /health/live:
+    get:
+      summary: Liveness check
+      description: Returns 200 if the service is alive (always returns 200).
+      operationId: getLiveness
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "alive"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      description: Exposes Prometheus-formatted metrics for monitoring.
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus metrics in text format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  schemas:
+    SensorReading:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique reading ID (string representation of int64)
+          example: "12345678"
+        device_id:
+          type: string
+          description: Device identifier
+          example: "sensor-temp-001"
+        timestamp:
+          type: string
+          format: date-time
+          description: Reading timestamp (ISO 8601)
+        reading_type:
+          type: string
+          description: Type of sensor reading
+          example: "temperature"
+        value:
+          type: number
+          format: double
+          description: Reading value
+          example: 23.456789
+        unit:
+          type: string
+          description: Unit of measurement
+          example: "celsius"
+        metadata:
+          type: object
+          description: Additional sensor metadata (optional)
+          additionalProperties: true
+          example: {"location": "building-a", "battery_level": 87}
+
+    DeviceQueryResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SensorReading"
+        meta:
+          type: object
+          properties:
+            count:
+              type: integer
+              description: Number of readings returned
+            limit:
+              type: integer
+              description: Requested limit
+            device_id:
+              type: string
+              description: Queried device ID
+            reading_type:
+              type: string
+              description: Applied reading type filter (empty if not filtered)
+
+    PKLookupResponse:
+      type: object
+      properties:
+        data:
+          $ref: "#/components/schemas/SensorReading"
+        meta:
+          type: object
+          properties:
+            id:
+              type: string
+              description: Queried primary key ID
+
+    StatsResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          description: Aggregated database statistics from materialized views
+          additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message, timestamp]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              enum:
+                - INVALID_PARAMETER
+                - DEVICE_NOT_FOUND
+                - READING_NOT_FOUND
+                - INTERNAL_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+            timestamp:
+              type: string
+              format: date-time
+              description: Error timestamp (ISO 8601)
+            request_id:
+              type: string
+              description: Request ID for tracing (when available)
+            details:
+              type: object
+              description: Additional validation error details (when applicable)
+              properties:
+                parameter:
+                  type: string
+                  description: The invalid parameter name(s)
+                provided:
+                  description: The value that was provided
+                constraints:
+                  description: Expected constraints for the parameter
+
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Overall health status
+          enum: [healthy, degraded, unhealthy]
+        timestamp:
+          type: string
+          format: date-time
+          description: Health check timestamp (ISO 8601)
+        checks:
+          type: object
+          description: Individual dependency health checks
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [healthy, unhealthy]
+              latency_ms:
+                type: integer
+                description: Ping latency in milliseconds
+              error:
+                type: string
+                description: Error message (only present when unhealthy)

@@ -53,7 +53,7 @@ internal/handler/        → HTTP handlers (chi router)
 internal/service/        → business logic + cache-aside pattern
 internal/repository/     → PostgreSQL queries (pgx/v5 pool)
 internal/cache/          → Redis cache (go-redis/v9, LRU, 30s TTL)
-internal/middleware/      → gzip, Prometheus metrics, request ID
+internal/middleware/      → gzip, Prometheus metrics, request ID, security headers
 internal/model/          → data structs
 ```
 
@@ -74,9 +74,11 @@ internal/model/          → data structs
 Copy `.env.example` to `.env`. All config via env vars:
 
 - `DATABASE_URL` — Postgres connection string (required)
-- `REDIS_URL` — Redis connection string
+- `REDIS_URL` — Redis connection string (includes password)
+- `REDIS_PASSWORD` — Redis AUTH password (required in docker-compose)
 - `REDIS_ENABLED` / `CACHE_ENABLED` — toggle caching (default: true)
 - `DB_MAX_CONNECTIONS` — pool size (default 50, docker-compose uses 200)
+- `LOG_LEVEL` — structured logging level: debug, info, warn, error (default: info)
 - `PORT` — API port (default 8080)
 
 ## Database
@@ -86,7 +88,8 @@ Migrations in `scripts/schema/migrations/` — numbered SQL files tracked in `sc
 Key schema optimizations:
 - **BRIN index** on `timestamp` (99% smaller than B-tree for append-only data)
 - **Covering index** with INCLUDE clause (index-only scans)
-- **Materialized views** (`mv_global_stats`, hourly/daily aggregations) — refreshed via `scripts/refresh_materialized_views.sh`
+- **Materialized views** (`mv_global_stats`, hourly/daily aggregations) — refreshed via `scripts/refresh_materialized_views.sh`. Uses `REFRESH MATERIALIZED VIEW CONCURRENTLY` (full scan of all rows). Expect 5-20 min on 50M+ rows. Use `--status` to check MV sizes, `global` for fastest refresh.
+- **JSONB metadata column** on `sensor_readings` (migration 007) — stores arbitrary sensor attributes
 - Postgres config tuned for 8+ cores, 2GB shared_buffers (may need reduction on small machines)
 
 ## Gotchas
@@ -100,6 +103,9 @@ Key schema optimizations:
 - **Device ID validation**: alphanumeric + hyphens + underscores, max 50 chars
 - **Cache scenario**: benchmark runner auto-flushes Redis before cache tests for cold start
 - **Stats device count**: uses TABLESAMPLE SYSTEM (0.5%) for estimation, falls back to MV sum
+- **Structured logging**: uses `log/slog` with JSON handler (not `log.Printf`). Log level controlled by `LOG_LEVEL` env var
+- **Security headers**: all responses include X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
+- **OpenAPI spec**: standalone `docs/openapi.yaml` (Swagger-compatible)
 
 ## Testing
 

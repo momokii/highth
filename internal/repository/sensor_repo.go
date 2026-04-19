@@ -74,7 +74,7 @@ func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int
 
 	// Build base query
 	baseQuery := `
-		SELECT id, device_id, timestamp, reading_type, value, unit
+		SELECT id, device_id, timestamp, reading_type, value, unit, metadata
 		FROM sensor_readings
 	`
 
@@ -138,7 +138,7 @@ func (r *SensorRepository) Query(ctx context.Context, deviceID string, limit int
 	for rows.Next() {
 		var r model.SensorReading
 		var id int64
-		if err := rows.Scan(&id, &r.DeviceID, &r.Timestamp, &r.ReadingType, &r.Value, &r.Unit); err != nil {
+		if err := rows.Scan(&id, &r.DeviceID, &r.Timestamp, &r.ReadingType, &r.Value, &r.Unit, &r.Metadata); err != nil {
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}
 		r.ID = fmt.Sprintf("%d", id)
@@ -164,9 +164,9 @@ func (r *SensorRepository) GetByID(ctx context.Context, id int64) (*model.Sensor
 	var rowID int64
 
 	err := r.db.QueryRow(ctx,
-		"SELECT id, device_id, timestamp, reading_type, value, unit FROM sensor_readings WHERE id = $1",
+		"SELECT id, device_id, timestamp, reading_type, value, unit, metadata FROM sensor_readings WHERE id = $1",
 		id,
-	).Scan(&rowID, &reading.DeviceID, &reading.Timestamp, &reading.ReadingType, &reading.Value, &reading.Unit)
+	).Scan(&rowID, &reading.DeviceID, &reading.Timestamp, &reading.ReadingType, &reading.Value, &reading.Unit, &reading.Metadata)
 
 	if err != nil {
 		if err == pgx.ErrNoRows {

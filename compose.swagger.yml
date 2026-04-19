@@ -1,0 +1,34 @@
+# =============================================================================
+# Higth Swagger UI
+# Docker Compose overlay for interactive API documentation
+# Usage: docker compose -f docker-compose.yml -f compose.swagger.yml up -d swagger-ui
+# =============================================================================
+#
+# Serves the OpenAPI 3.0 spec from docs/openapi.yaml in Swagger UI.
+# Access at http://localhost:8081
+#
+# The spec is mounted read-only from the local docs/ directory.
+
+services:
+  swagger-ui:
+    image: swaggerapi/swagger-ui:v5.20.1
+    container_name: highth-swagger-ui
+    restart: unless-stopped
+    networks:
+      - highth-network
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./docs/openapi.yaml:/tmp/openapi.yaml:ro
+    environment:
+      SWAGGER_JSON: /tmp/openapi.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ > /dev/null || wget -q -O /dev/null http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+networks:
+  highth-network:
+    external: true

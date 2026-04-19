@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -263,7 +263,7 @@ func (h *SensorHandler) writeError(w http.ResponseWriter, r *http.Request, statu
 
 // handleServiceError maps service errors to HTTP status codes.
 func (h *SensorHandler) handleServiceError(w http.ResponseWriter, r *http.Request, err error, start time.Time) {
-	log.Printf("ERROR: service error: %v", err)
+	slog.Error("service error", "error", err, "request_id", chimiddleware.GetReqID(r.Context()))
 	switch {
 	case errors.Is(err, service.ErrInvalidParameter):
 		h.writeError(w, r, http.StatusBadRequest, "INVALID_PARAMETER", err.Error(), start, ErrorDetails{})
@@ -283,7 +283,7 @@ func (h *SensorHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.service.GetStats(r.Context())
 	if err != nil {
 		// Log the actual error for debugging
-		log.Printf("ERROR: GetStats failed: %v", err)
+		slog.Error("get stats failed", "error", err, "request_id", chimiddleware.GetReqID(r.Context()))
 		h.writeError(w, r, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to get stats", start, ErrorDetails{})
 		return
 	}

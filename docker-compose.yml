@@ -52,8 +52,9 @@ services:
       --timeout 300
       --hz 100
       --tcp-backlog 511
+      --requirepass ${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -70,7 +71,7 @@ services:
       - 127.0.0.11
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgres://sensor_user:${POSTGRES_PASSWORD:-CHANGE_ME_POSTGRES_PASSWORD}@postgres:5432/sensor_db?sslmode=disable}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: ${REDIS_URL:-redis://:${REDIS_PASSWORD:-CHANGE_ME_REDIS_PASSWORD}@redis:6379}
       CACHE_ENABLED: ${CACHE_ENABLED:-true}
       DB_MAX_CONNECTIONS: ${DB_MAX_CONNECTIONS:-50}
       DB_MIN_CONNECTIONS: ${DB_MIN_CONNECTIONS:-10}

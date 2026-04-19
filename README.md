@@ -55,6 +55,9 @@ IoT sensor telemetry is the **ideal test case** because it's:
 - ✅ Migration system with tracking
 - ✅ Docker orchestration (non-root container)
 - ✅ golangci-lint clean (0 issues)
+- ✅ Structured logging (log/slog, JSON output, configurable log level)
+- ✅ Security headers middleware
+- ✅ OpenAPI 3.0 specification (standalone YAML)
 
 **What's NOT included (add if needed):**
 - ❌ Authentication/authorization (domain-specific)
@@ -111,7 +114,8 @@ highth/
 │   ├── middleware/             # HTTP middleware
 │   │   ├── compression.go      # Gzip response compression
 │   │   ├── metrics.go          # Prometheus metrics collection
-│   │   └── prometheus.go       # /metrics endpoint handler
+│   │   ├── prometheus.go       # /metrics endpoint handler
+│   │   └── security.go         # Security headers (X-Content-Type-Options, X-Frame-Options, X-XSS-Protection)
 │   │
 │   ├── model/                  # Data models (structs)
 │   │   ├── health.go           # Health check response model
@@ -133,7 +137,8 @@ highth/
 │   │   │   ├── 002_advanced_indexes.sql    # BRIN index + composite index
 │   │   │   ├── 004_materialized_views.sql  # Hourly/daily/global stats MVs
 │   │   │   ├── 005_incremental_mv_refresh.sql # Incremental MV refresh functions
-│   │   │   └── 006_covering_index.sql      # Covering index with INCLUDE clause
+│   │   │   ├── 006_covering_index.sql      # Covering index with INCLUDE clause
+│   │   │   └── 007_metadata_and_type_corrections.sql # JSONB metadata column
 │   │   └── (schema.sql)        # Initial schema (if needed)
 │   │
 │   ├── docker-compose.yml      # Docker services definition
@@ -161,6 +166,7 @@ highth/
 │   ├── implementation/         # Implementation guides
 │   │   └── (detailed guides for specific optimizations)
 │   ├── api-spec.md             # REST API specification
+│   ├── openapi.yaml            # OpenAPI 3.0 spec (standalone, Swagger-compatible)
 │   ├── architecture.md         # System architecture design
 │   ├── stack.md                # Technology stack details
 │   ├── testing.md              # Testing methodology
@@ -391,6 +397,8 @@ The Higth project uses an automated migration system to track and apply database
 | Advanced Indexes | 002 | Creates BRIN and composite indexes for performance | ✅ Applied |
 | Materialized Views | 004 | Creates `mv_device_hourly_stats`, `mv_device_daily_stats`, `mv_global_stats` | ✅ Applied |
 | Incremental MV Refresh | 005 | Creates `refresh_*_incremental()` functions for fast MV refresh | ✅ Applied |
+| Covering Index | 006 | Creates covering index with INCLUDE clause for index-only scans | ✅ Applied |
+| Metadata Column | 007 | Adds JSONB metadata column for sensor attributes | ✅ Applied |
 
 ### Creating New Migrations
 
@@ -575,6 +583,7 @@ The `docker-compose.yml` includes 8 Redis server parameters optimized for high-t
 **Parameters include:**
 - **Memory**: `maxmemory=512mb`, `maxmemory-policy=allkeys-lru` — LRU eviction keeps hot keys cached when memory is full
 - **Persistence**: `appendonly=yes` — AOF persistence for cache durability (optional for pure cache use case)
+- **Authentication**: `requirepass` — Password-protected access (set via `REDIS_PASSWORD` in `.env`)
 - **Connection limits**: `maxclients=10000` — explicit client connection limit
 - **Connection health**: `tcp-keepalive=60`, `timeout=300` — detect dead connections and clean up idle clients after 5 minutes
 - **Performance**: `hz=100` — internal task frequency (expired key cleanup, idle client detection) runs 100×/sec instead of default 10×/sec
@@ -916,6 +925,9 @@ All API responses include the following headers:
 | `X-Request-ID` | Unique request identifier for debugging | `692f0f0b8b63/7EGnsijONu-000003` |
 | `X-Response-Time` | Server processing time in milliseconds | `3` |
 | `Cache-Control` | Cache directives for client caching | `public, max-age=30` |
+| `X-Content-Type-Options` | Prevents MIME-type sniffing | `nosniff` |
+| `X-Frame-Options` | Prevents clickjacking | `DENY` |
+| `X-XSS-Protection` | XSS protection (modern disabled approach) | `0` |
 
 **Example:**
 ```bash
@@ -951,8 +963,9 @@ curl -i "http://localhost:8080/api/v1/sensor-readings?device_id=sensor-000000&li
 | device_id | VARCHAR(50) | Device identifier (e.g., `sensor-000001`) |
 | timestamp | TIMESTAMPTZ | Reading timestamp (UTC) |
 | reading_type | VARCHAR(20) | Type: `temperature`, `humidity`, `pressure` |
-| value | DECIMAL(10,2) | Sensor value |
+| value | NUMERIC(10,2) | Sensor value |
 | unit | VARCHAR(20) | Unit of measurement |
+| metadata | JSONB | Additional sensor attributes (default: `{}`) |
 
 **Indexes:**
 - Primary key B-tree index (on `id`)
@@ -1421,165 +1434,109 @@ Materialized views are **pre-computed database tables** that store the results o
 **Why are they critical for Higth?**
 
 - **100-200x faster queries**: Dashboard queries that take 50-200ms on raw tables complete in 1-5ms
-- **Enables real-time dashboards**: Can query aggregations across 83M+ rows instantly
+- **Enables real-time dashboards**: Can query aggregations across 100M+ rows instantly
 - **Reduces database load**: Expensive calculations are done once during refresh, not on every query
 - **Scales time-series data**: Efficient aggregation for hourly/daily statistics
 
 ### The Three Materialized Views
 
-| View | Purpose | Data Size | Refresh Strategy |
-|------|---------|-----------|------------------|
-| **mv_device_hourly_stats** | Hourly aggregations per device (last 7 days) | ~168K rows | Incremental - every 15 min |
-| **mv_device_daily_stats** | Daily aggregations with percentiles (last 30 days) | ~3K rows | Incremental - daily |
-| **mv_global_stats** | Global statistics across all devices | ~3 rows | Full - every 5 min |
+| View | Purpose | Query Time (after refresh) | What it computes |
+|------|---------|---------------------------|-----------------|
+| **mv_device_hourly_stats** | Hourly aggregations per device | <5ms | avg/min/max per device per hour |
+| **mv_device_daily_stats** | Daily aggregations with percentiles | <5ms | avg/min/max/p50/p95/p99 per device per day |
+| **mv_global_stats** | Global statistics across all devices | <1ms | total readings, active devices per type |
 
-**What each view provides:**
-
-1. **mv_device_hourly_stats**: Average/min/max readings per device per hour
-   - Use for: Device performance trends, hourly dashboards
-
-2. **mv_device_daily_stats**: Daily statistics with percentiles (p50, p95, p99)
-   - Use for: Long-term trends, capacity planning, anomaly detection
-
-3. **mv_global_stats**: Total readings, active devices, data volume
-   - Use for: System overview, billing, capacity monitoring
+Only the `/api/v1/stats` endpoint uses these views. The main `/api/v1/sensor-readings` endpoint queries the base table directly with indexes — it does NOT depend on materialized views.
 
 ### Refreshing Materialized Views
 
-Materialized views need to be refreshed to include new data. Higth provides an automated script:
+Materialized views store a **snapshot** of data. They must be refreshed to pick up new data from `sensor_readings`.
 
-#### Manual Refresh
+**How refresh works:** `REFRESH MATERIALIZED VIEW` re-executes the underlying query against all rows in `sensor_readings`. This is a full table scan — the refresh time depends on your total row count, not the MV size.
+
+**Timing expectations by dataset size:**
+
+| Dataset | Hourly Stats | Daily Stats | Global Stats | All (total) |
+|---------|-------------|-------------|-------------|-------------|
+| 1M rows | ~2 seconds | ~1 second | <1 second | ~3 seconds |
+| 10M rows | ~15 seconds | ~10 seconds | ~3 seconds | ~30 seconds |
+| 50M rows | ~3-5 minutes | ~2-3 minutes | ~1-2 minutes | ~8-12 minutes |
+| 100M rows | ~5-10 minutes | ~3-5 minutes | ~2-4 minutes | ~12-20 minutes |
+| 200M rows | ~10-20 minutes | ~6-12 minutes | ~4-8 minutes | ~25-45 minutes |
+| 300M rows | ~15-30 minutes | ~10-20 minutes | ~5-15 minutes | ~30-60+ minutes |
+
+The script detects your row count and shows a **warning with estimated time** before starting. Press Ctrl+C during the 5-second countdown to cancel. Use `-y` flag to skip the countdown (for cron jobs).
+
+The script uses `CONCURRENTLY` for all views, meaning **reads are not blocked during refresh** — your API keeps serving stale data until the refresh completes.
+
+#### Quick testing (no waiting)
+
+For basic testing, you do NOT need to refresh MVs. The main sensor-readings endpoints work without MVs. Only the stats endpoint (`/api/v1/stats`) returns stale data.
 
 ```bash
-# Refresh all views
+# If you just need stats to work and can wait:
+./scripts/refresh_materialized_views.sh global   # Fastest — scans all rows but small result
+
+# Check current MV status without refreshing:
+./scripts/refresh_materialized_views.sh --status
+```
+
+#### Full refresh
+
+```bash
+# Refresh all views (expect 10-20 min on 100M rows)
 ./scripts/refresh_materialized_views.sh all
 
-# Refresh specific view type
+# Refresh specific view
 ./scripts/refresh_materialized_views.sh hourly   # Hourly stats only
 ./scripts/refresh_materialized_views.sh daily    # Daily stats only
 ./scripts/refresh_materialized_views.sh global   # Global stats only
 ```
 
-**What the script does:**
-- Shows current view size and row count
-- Uses incremental refresh for hourly/daily (only refreshes last N days)
-- Uses CONCURRENTLY refresh for global stats (non-blocking)
-- Reports refresh time and status
-
-**Example output:**
-```
-╔════════════════════════════════════════════════════════════════╗
-║         Materialized View Refresh Script v2.0                  ║
-║         (Incremental Refresh Enabled)                           ║
-╚════════════════════════════════════════════════════════════════╝
-
-INFO: Refresh type: all
-INFO: Database: sensor_db
-
-INFO: Refreshing hourly statistics...
-INFO: Current size: 25 MB
-INFO: Current rows: 167,843
-INFO: Using incremental refresh (last 7 days)
-[SUCCESS] Refreshed device_hourly_stats (2s)
-
-... (similar for other views)
-
-─────────────────────────────────────────
-Refresh Summary
-─────────────────────────────────────────
-Views refreshed: 3
-Total time: 5s
-Completed at: 2026-03-27 16:00:00
-
-╔════════════════════════════════════════════════════════════════╗
-║              Refresh Complete ✓                                 ║
-╚════════════════════════════════════════════════════════════════╝
-```
-
 #### Automated Refresh (Production)
 
-For production environments, automate refreshes using cron:
+For production, schedule refreshes via cron during off-peak hours:
 
 ```bash
 # Edit crontab
 crontab -e
 
-# Add these lines:
-*/15 * * * * /path/to/highth/scripts/refresh_materialized_views.sh hourly >> /var/log/mv_refresh.log 2>&1
-0 2 * * * /path/to/higth/scripts/refresh_materialized_views.sh daily >> /var/log/mv_refresh.log 2>&1
-*/5 * * * * /path/to/higth/scripts/refresh_materialized_views.sh global >> /var/log/mv_refresh.log 2>&1
+# Recommended schedule:
+0 */6 * * * /path/to/scripts/refresh_materialized_views.sh global >> /var/log/mv_refresh.log 2>&1
+0 2 * * * /path/to/scripts/refresh_materialized_views.sh hourly >> /var/log/mv_refresh.log 2>&1
+0 3 * * 0 /path/to/scripts/refresh_materialized_views.sh daily >> /var/log/mv_refresh.log 2>&1
 ```
 
-**Recommended schedule:**
-- **Hourly stats**: Every 15 minutes (keeps last 7 days fresh)
-- **Daily stats**: Once daily at 2 AM (off-peak hours)
-- **Global stats**: Every 5 minutes (fast refresh, small dataset)
-
 **Why these intervals?**
-- Hourly stats need frequent updates for current-day dashboards
-- Daily stats can refresh overnight (historical data doesn't change)
-- Global stats are tiny, so frequent refreshes are cheap
+- **Global stats**: Every 6 hours — keeps overview numbers current (total readings, device count)
+- **Hourly stats**: Once daily at 2 AM — rebuilds hourly aggregations during low traffic
+- **Daily stats**: Once weekly — historical daily stats rarely change
 
-### Best Practices
-
-1. **Refresh before queries**
-   - Run refresh before running dashboard queries for best performance
-   - For testing: `./scripts/refresh_materialized_views.sh all && ./tests/run-benchmarks.sh`
-
-2. **Monitor refresh time**
-   - Normal refresh: 2-10 seconds
-   - If refresh takes >30s, investigate database performance
-
-3. **Check view size**
-   - Views should stay relatively small (hourly: <100MB, daily: <50MB)
-   - If growing too large, check incremental refresh is working
-
-4. **Use INCREMENTAL refresh when possible**
-   - The script uses incremental functions by default (faster, less resource-intensive)
-   - Only refreshes the last N days (7 for hourly, 30 for daily)
+**Important:** Do NOT schedule `all` for frequent runs (e.g., every 5 minutes) on large datasets. Each refresh scans all rows. Over-scheduling will saturate your database.
 
 ### Troubleshooting
 
-**Views are slow to query:**
-```bash
-# Check when views were last refreshed
-docker exec highth-postgres psql -U sensor_user -d sensor_db -c "
-SELECT schemaname, matviewname, last_refresh
-FROM pg_matviews WHERE matviewname LIKE 'mv_%';
-"
+**Refresh is taking too long:**
+- This is expected on large datasets (50M+ rows). Each refresh scans the entire `sensor_readings` table.
+- Use `global` only for quick stat updates — it's still a full scan but the aggregation is simpler.
+- Consider running refreshes during off-peak hours only.
+- For truly incremental refreshes in production, consider [TimescaleDB continuous aggregates](https://docs.timescale.com/use-timescale/latest/continuous-aggregates/) which only process new data.
 
-# Force refresh all views
+**Refresh script fails with "too many clients":**
+```bash
+# Stop API to free database connections
+docker compose stop api
 ./scripts/refresh_materialized_views.sh all
-```
-
-**Refresh script fails:**
-```bash
-# Check PostgreSQL is running
-docker ps | grep postgres
-
-# Check database connection
-docker exec highth-postgres psql -U sensor_user -d sensor_db -c "SELECT 1"
-
-# Check view exists
-docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\dmv"
+docker compose start api
 ```
 
 **Views don't contain recent data:**
 ```bash
-# Check refresh schedule (if using cron)
-crontab -l | grep refresh_materialized_views
+# Check current MV status
+./scripts/refresh_materialized_views.sh --status
 
-# Manually refresh to bring views up to date
+# Refresh to bring views up to date
 ./scripts/refresh_materialized_views.sh all
-```
-
-**Incremental refresh not working:**
-```bash
-# Check if incremental functions exist
-docker exec highth-postgres psql -U sensor_user -d sensor_db -c "\df refresh_*"
-
-# Re-run all migrations if needed
-./scripts/run_migrations.sh
 ```
 
 ---
@@ -1729,7 +1686,9 @@ python3 scripts/verify_indexes.py --verbose                  # Show detailed com
 ./tests/run-benchmarks.sh
 
 # === Materialized Views ===
-./scripts/refresh_materialized_views.sh all
+./scripts/refresh_materialized_views.sh --status    # Check current MV sizes
+./scripts/refresh_materialized_views.sh global      # Quick refresh (fastest)
+./scripts/refresh_materialized_views.sh all         # Full refresh (slow on large datasets)
 
 # === Cache ===
 docker exec highth-redis redis-cli FLUSHALL

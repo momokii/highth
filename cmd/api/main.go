@@ -4,7 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,12 +21,33 @@ import (
 	"github.com/kelanach/higth/internal/service"
 )
 
+// initLogger initializes the structured logger with the given log level.
+func initLogger(levelStr string) {
+	var level slog.Level
+	switch levelStr {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+	handler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
+	slog.SetDefault(slog.New(handler))
+}
+
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		slog.Error("failed to load configuration", "error", err)
+		os.Exit(1)
 	}
+
+	// Initialize structured logger
+	initLogger(cfg.LogLevel)
 
 	// Initialize repository
 	repo, err := repository.New(repository.Config{
@@ -38,7 +59,8 @@ func main() {
 		MinOpenConns: int32(cfg.DBMinConnections),
 	})
 	if err != nil {
-		log.Fatalf("Failed to initialize repository: %v", err)
+		slog.Error("failed to initialize repository", "error", err)
+		os.Exit(1)
 	}
 	defer repo.Close()
 
@@ -53,8 +75,7 @@ func main() {
 		ConnMaxIdleTime: cfg.RedisConnMaxIdleTime,
 	})
 	if err != nil {
-		log.Printf("Warning: Failed to initialize cache: %v", err)
-		// Continue without cache
+		slog.Warn("failed to initialize cache, continuing without cache", "error", err)
 		redisCache = &cache.RedisCache{}
 	}
 	defer func() { _ = redisCache.Close() }()
@@ -75,6 +96,7 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
+	r.Use(higthmiddleware.SecurityHeadersMiddleware)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Timeout(cfg.RequestTimeout))
 	r.Use(higthmiddleware.GzipMiddleware)
@@ -106,9 +128,10 @@ func main() {
 
 	// Graceful shutdown
 	go func() {
-		log.Printf("Starting server on %s", addr)
+		slog.Info("starting server", "addr", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			slog.Error("failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -117,14 +140,15 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	slog.Info("shutting down server")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		slog.Error("server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("Server stopped")
+	slog.Info("server stopped")
 }
