@@ -123,8 +123,12 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)
 	server := &http.Server{
-		Addr:    addr,
-		Handler: r,
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      35 * time.Second, // slightly above middleware.Timeout (30s)
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Graceful shutdown
