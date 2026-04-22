@@ -58,11 +58,11 @@ IoT sensor telemetry is the **ideal test case** because it's:
 - ✅ Structured logging (log/slog, JSON output, configurable log level)
 - ✅ Security headers middleware
 - ✅ OpenAPI 3.0 specification (standalone YAML)
+- ✅ Hardware bottleneck observability (node_exporter, pg_stat_statements, Grafana dashboards)
 
 **What's NOT included (add if needed):**
 - ❌ Authentication/authorization (domain-specific)
 - ❌ Horizontal scaling (connection pool sufficient for most workloads)
-- ❌ Monitoring dashboard (use Grafana/Loki instead)
 
 **Scaling considerations:**
 - System is **CPU-bound, not I/O-bound** (BRIN indexes minimize disk I/O)
@@ -1092,6 +1092,8 @@ This benchmark system validates that the API + database can handle:
 ./tests/run-benchmarks.sh --scenario time-range   # Time-range queries
 ./tests/run-benchmarks.sh --scenario mixed        # Mixed workload
 ./tests/run-benchmarks.sh --scenario cache        # Cache performance
+./tests/run-benchmarks.sh --scenario stress       # Find hardware ceiling
+./tests/run-benchmarks.sh --scenario complexity   # Query complexity tiers
 ```
 
 **Test remote API (different VM/server):**
@@ -1116,7 +1118,7 @@ This benchmark system validates that the API + database can handle:
 
 | Parameter | Short | Default | Description |
 |-----------|-------|---------|-------------|
-| `--scenario` | `-s` | all | Run specific scenario (hot, time-range, mixed, cache) |
+| `--scenario` | `-s` | all | Run specific scenario (hot, time-range, mixed, cache, stats, pk-lookup, stress, complexity) |
 | `--rps` | `-r` | 50 | Requests per second |
 | `--duration` | `-d` | 2m | Test duration (e.g., 30s, 5m, 1h) |
 | `--target-url` | `-u` | http://localhost:8080 | API endpoint to test |
@@ -1140,7 +1142,7 @@ This benchmark system validates that the API + database can handle:
 
 ### Benchmark Scenarios
 
-The test suite includes **6 comprehensive scenarios** that simulate real-world IoT traffic patterns:
+The test suite includes **8 comprehensive scenarios** that simulate real-world IoT traffic patterns:
 
 | Scenario | Purpose | Duration | Target |
 |----------|---------|----------|--------|
@@ -1150,6 +1152,8 @@ The test suite includes **6 comprehensive scenarios** that simulate real-world I
 | **Cache Performance** | Cold → Warm → Hot cache phases | 3 min | Hot: p95 < 100ms |
 | **Stats and Aggregation** | Materialized view query performance | 2 min | p95 < 800ms |
 | **PK Hot Lookup** | Single-row primary key index scan | 30s | p95 < 100ms |
+| **Stress Ceiling** | Ramps RPS until system breaks | varies | Find max sustainable RPS |
+| **Query Complexity** | 4 tiers testing different hardware paths | ~2 min | Per-tier thresholds |
 
 ### Scenario Details
 
@@ -1204,6 +1208,37 @@ The test suite includes **6 comprehensive scenarios** that simulate real-world I
 - Phase 2 p95 < 300ms (warming up)
 - Phase 3 p95 < 100ms (warm cache, very fast!)
 - Cache hit rate > 80% in Phase 3
+
+#### 7. Stress Ceiling Finder
+
+**Tests:** Finds the hardware ceiling by ramping RPS until the system degrades
+- Starts at 50 RPS, increases by 50 RPS every 30 seconds
+- Mixed query types (PK lookup, device query, stats)
+- Reports the maximum sustainable RPS before errors or latency spikes
+
+**Use case:** Answer "what is the actual hardware ceiling?" on your specific machine.
+
+#### 8. Query Complexity Tiers
+
+**Tests:** Each hardware path explicitly through 4 sub-scenarios:
+
+| Tier | Query | Index Used | Hardware Path |
+|------|-------|-----------|---------------|
+| PK Lookup | `?id=N` | B-tree | CPU + memory |
+| Device Filter | `?device_id=X&limit=10` | Composite | CPU + memory |
+| Time Range | `?device_id=X&from=...&to=...` | BRIN | Disk I/O |
+| Stats Aggregation | `/api/v1/stats` | Materialized view | MV freshness |
+
+**Use case:** Identify WHICH hardware component is the bottleneck. If PK Lookup is slow → CPU/memory issue. If Time Range is disproportionately slow → disk I/O issue.
+
+### Comparing Benchmark Results
+
+```bash
+# Compare two runs (e.g., before/after hardware change)
+./scripts/compare_benchmarks.sh results/baseline.json results/current.json
+```
+
+Shows side-by-side p50/p95/p99 with delta percentages. Regressions >10% highlighted in red.
 
 ### Understanding Benchmark Results
 

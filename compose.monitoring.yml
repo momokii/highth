@@ -12,6 +12,7 @@
 #   - Grafana     (11.6.0)      : Dashboard visualization
 #   - Postgres Exporter (v0.17.1): Exposes PostgreSQL metrics
 #   - Redis Exporter    (v1.69.0): Exposes Redis metrics
+#   - Node Exporter     (v1.8.2) : Exposes host system metrics (CPU, disk, memory, network)
 # =============================================================================
 
 services:
@@ -24,10 +25,13 @@ services:
     restart: unless-stopped
     networks:
       - highth-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "9090:9090"
     volumes:
       - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./configs/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-data:/prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -103,6 +107,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Node Exporter (System Metrics)
+  # ---------------------------------------------------------------------------
+  # Collects CPU, memory, disk I/O, network, and filesystem metrics from the
+  # host machine. Essential for proving hardware is the bottleneck.
+  # Uses host PID namespace and read-only mounts for accurate host metrics.
+  # ---------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: highth-node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.cpu.info'
+      - '--collector.meminfo'
+      - '--collector.diskstats'
+      - '--collector.netdev'
+      - '--no-collector.ipvs'
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:9100/metrics || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   # ---------------------------------------------------------------------------
   # Redis Exporter

@@ -58,6 +58,8 @@ declare -A SCENARIOS=(
   ["cache"]="04-cache-performance.js"
   ["stats"]="05-stats-and-aggregation.js"
   ["pk-lookup"]="06-pk-lookup.js"
+  ["stress"]="07-stress-ceiling.js"
+  ["complexity"]="08-query-complexity.js"
 )
 
 # ============================================================================
@@ -102,6 +104,13 @@ declare -A TIER_RPS=(
     # pk-lookup scenario (constant-arrival-rate, default 50 RPS, single-row PK index scan)
     # Simplest possible query — tightest latency targets in the suite.
     ["smoke:pk-lookup"]=5  ["low:pk-lookup"]=50  ["medium:pk-lookup"]=200 ["high:pk-lookup"]=500 ["expert:pk-lookup"]=800
+    # stress scenario (ramping-arrival-rate, finds hardware ceiling)
+    # RPS value = starting rate. Scenario ramps up by 50 RPS per step.
+    # Duration = time per step. Total runtime depends on how high it ramps.
+    ["smoke:stress"]=20      ["low:stress"]=50      ["medium:stress"]=50     ["high:stress"]=50     ["expert:stress"]=50
+    # complexity scenario (4 sequential sub-scenarios testing different hardware paths)
+    # Lower RPS since each sub-scenario runs sequentially with cooldown between them.
+    ["smoke:complexity"]=10   ["low:complexity"]=30   ["medium:complexity"]=50  ["high:complexity"]=100 ["expert:complexity"]=150
 )
 
 # Tier profile lookup: TIER_DURATION[<tier>:<scenario>] = duration
@@ -118,6 +127,10 @@ declare -A TIER_DURATION=(
     ["smoke:stats"]=15s    ["low:stats"]=60s     ["medium:stats"]=60s     ["high:stats"]=90s     ["expert:stats"]=2m
     # pk-lookup scenario durations
     ["smoke:pk-lookup"]=10s ["low:pk-lookup"]=30s ["medium:pk-lookup"]=45s ["high:pk-lookup"]=60s ["expert:pk-lookup"]=2m
+    # stress scenario durations (per ramp step — total runtime = steps × duration)
+    ["smoke:stress"]=10s    ["low:stress"]=20s     ["medium:stress"]=30s    ["high:stress"]=30s    ["expert:stress"]=30s
+    # complexity scenario durations (per sub-scenario — 4 sub-scenarios + cooldowns)
+    ["smoke:complexity"]=10s ["low:complexity"]=30s ["medium:complexity"]=30s ["high:complexity"]=45s ["expert:complexity"]=45s
 )
 
 # ============================================================================
@@ -297,8 +310,23 @@ TEST SCENARIOS:
                  Dynamic ID range via /api/v1/stats (total_readings == MAX(id)).
                  Executor: constant-arrival-rate | Default RPS: 50 | VUs: 10-50
 
+  stress       Stress Ceiling Finder
+                 Ramps RPS from 50 upward by 50 RPS per step until system breaks.
+                 Reports maximum sustainable RPS -- finds the hardware ceiling.
+                 Uses mixed query types (PK, device, stats).
+                 Executor: ramping-arrival-rate | Start RPS: 50 | VUs: 20-500
+
+  complexity   Query Complexity Tiers
+                 4 sequential sub-scenarios testing different hardware paths:
+                 1) PK lookup (B-tree -> CPU+memory)
+                 2) Device filter (composite index -> CPU+memory)
+                 3) Time-range (BRIN scan -> disk I/O)
+                 4) Stats aggregation (materialized view -> MV freshness)
+                 Use to identify WHICH hardware component is the bottleneck.
+                 Executor: constant-arrival-rate (per tier) | VUs: 3-30
+
 PARAMETERS:
-  -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache, stats, pk-lookup)
+  -s, --scenario <name>     Run specific scenario (hot, time-range, mixed, cache, stats, pk-lookup, stress, complexity)
   --tier <name>             Load tier profile (smoke, low, medium, high, expert)
   -r, --rps <number>        Requests per second for constant-arrival-rate scenarios
   -d, --duration <time>     Test duration per scenario (e.g., 30s, 5m, 1h)

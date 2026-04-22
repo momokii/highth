@@ -1,0 +1,78 @@
+groups:
+  - name: hardware_bottleneck
+    rules:
+      - alert: HighIOWait
+        expr: rate(node_cpu_seconds_total{mode="iowait"}[2m]) > 0.20
+        for: 2m
+        labels:
+          severity: warning
+          component: disk
+        annotations:
+          summary: "High disk I/O wait detected"
+          description: "CPU iowait is {{ $value | humanizePercentage }} — the disk is likely the bottleneck. Check disk I/O dashboard panel."
+
+      - alert: CPUHighUsage
+        expr: (1 - rate(node_cpu_seconds_total{mode="idle"}[2m])) > 0.90
+        for: 2m
+        labels:
+          severity: warning
+          component: cpu
+        annotations:
+          summary: "CPU usage above 90%"
+          description: "CPU usage is {{ $value | humanizePercentage }}. The system may be CPU-bound."
+
+      - alert: MemoryPressure
+        expr: (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: memory
+        annotations:
+          summary: "Swap usage detected — memory is under pressure"
+          description: "The system is using swap memory. This indicates RAM is insufficient for the current workload."
+
+  - name: application
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[2m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API p95 latency above 500ms"
+          description: "p95 latency is {{ $value | humanizeDuration }}. Check hardware bottleneck dashboard for the cause."
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[1m]) / rate(http_requests_total[1m]) > 0.01
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "Error rate above 1%"
+          description: "API error rate is {{ $value | humanizePercentage }}. Check logs for details."
+
+  - name: database
+    rules:
+      - alert: PoolExhaustion
+        expr: sum(pg_stat_activity_count) > 160
+        for: 2m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connection pool >80% utilized ({{ $value }}/200)"
+          description: "Connection pool is nearly exhausted. Consider increasing max_connections or reducing query time."
+
+  - name: cache
+    rules:
+      - alert: RedisMemoryPressure
+        expr: redis_memory_used_bytes / (512 * 1024 * 1024) > 0.90
+        for: 2m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis memory usage above 90% of maxmemory"
+          description: "Redis is using {{ $value | humanizePercentage }} of its 512MB limit. Evictions may be occurring."

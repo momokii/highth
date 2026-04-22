@@ -40,6 +40,7 @@ type Config struct {
 	// Application configuration
 	LogLevel       string
 	RequestTimeout time.Duration
+	Environment    string
 }
 
 // Load reads configuration from environment variables and returns a Config struct.
@@ -77,6 +78,7 @@ func Load() (*Config, error) {
 		// Application configuration
 		LogLevel:       getEnv("LOG_LEVEL", "info"),
 		RequestTimeout: getEnvAsDuration("REQUEST_TIMEOUT", 30*time.Second),
+		Environment:    getEnv("ENVIRONMENT", "production"),
 	}
 
 	// Validate required configuration

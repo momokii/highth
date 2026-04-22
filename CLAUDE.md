@@ -42,7 +42,7 @@ python3 scripts/verify_indexes.py
 
 Tiers: `smoke` (verify runs) → `low` (dev baseline) → `medium` (staging) → `high` (stress) → `expert` (find ceiling)
 
-Scenarios: `hot` (cache), `time-range` (MV), `mixed` (multi-endpoint), `cache` (cold/warm/hot phases), `stats` (MV-only), `pk-lookup` (single-row PK scan)
+Scenarios: `hot` (cache), `time-range` (MV), `mixed` (multi-endpoint), `cache` (cold/warm/hot phases), `stats` (MV-only), `pk-lookup` (single-row PK scan), `stress` (ramp to ceiling), `complexity` (query tier comparison)
 
 ## Architecture
 
@@ -79,6 +79,7 @@ Copy `.env.example` to `.env`. All config via env vars:
 - `REDIS_ENABLED` / `CACHE_ENABLED` — toggle caching (default: true)
 - `DB_MAX_CONNECTIONS` — pool size (default 50, docker-compose uses 200)
 - `LOG_LEVEL` — structured logging level: debug, info, warn, error (default: info)
+- `ENVIRONMENT` — `development` enables pprof debug server on port 6060 (default: production)
 - `PORT` — API port (default 8080)
 
 ## Database
@@ -90,6 +91,7 @@ Key schema optimizations:
 - **Covering index** with INCLUDE clause (index-only scans)
 - **Materialized views** (`mv_global_stats`, hourly/daily aggregations) — refreshed via `scripts/refresh_materialized_views.sh`. Uses `REFRESH MATERIALIZED VIEW CONCURRENTLY` (full scan of all rows). Expect 5-20 min on 50M+ rows. Use `--status` to check MV sizes, `global` for fastest refresh.
 - **JSONB metadata column** on `sensor_readings` (migration 007) — stores arbitrary sensor attributes
+- **pg_stat_statements** enabled (migration 008) — query-level performance tracking for bottleneck analysis
 - Postgres config tuned for 8+ cores, 2GB shared_buffers (may need reduction on small machines)
 
 ## Gotchas
@@ -106,6 +108,8 @@ Key schema optimizations:
 - **Structured logging**: uses `log/slog` with JSON handler (not `log.Printf`). Log level controlled by `LOG_LEVEL` env var
 - **Security headers**: all responses include X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
 - **OpenAPI spec**: standalone `docs/openapi.yaml` (Swagger-compatible)
+- **Monitoring stack**: Prometheus + Grafana + node_exporter + pg/redis exporters (see `compose.monitoring.yml`)
+- **pprof**: debug server on port 6060 when `ENVIRONMENT=development` — `go tool pprof http://localhost:6060/debug/pprof/profile`
 
 ## Testing
 

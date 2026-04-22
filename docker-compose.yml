@@ -26,6 +26,9 @@ services:
       -c max_parallel_workers=8
       -c bgwriter_delay=200ms
       -c bgwriter_lru_maxpages=100
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c pg_stat_statements.max=10000
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U sensor_user -d sensor_db"]
       interval: 10s

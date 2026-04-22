@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -119,6 +120,21 @@ func main() {
 	r.Get("/metrics", func(w http.ResponseWriter, r *http.Request) {
 		higthmiddleware.MetricsHandler().ServeHTTP(w, r)
 	})
+
+	// Start pprof debug server in development mode (separate port, no impact on main API)
+	if cfg.Environment == "development" {
+		debugPort := os.Getenv("DEBUG_PORT")
+		if debugPort == "" {
+			debugPort = "6060"
+		}
+		debugAddr := fmt.Sprintf("%s:%s", cfg.Host, debugPort)
+		go func() {
+			slog.Info("starting debug server (pprof)", "addr", debugAddr)
+			if err := http.ListenAndServe(debugAddr, nil); err != nil {
+				slog.Warn("debug server stopped", "error", err)
+			}
+		}()
+	}
 
 	// Start server
 	addr := fmt.Sprintf("%s:%s", cfg.Host, cfg.Port)

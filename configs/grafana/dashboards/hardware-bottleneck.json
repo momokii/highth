@@ -1,0 +1,206 @@
+{
+  "uid": "hardware-bottleneck",
+  "title": "Hardware Bottleneck Analysis",
+  "description": "Correlates API latency with system metrics (CPU, disk I/O, memory, network) to prove which hardware component is the bottleneck during benchmarks.\n\nHow to read: Run a benchmark, then look for which metric correlates with latency spikes.\n- Latency + high iowait (red line, top-left) = DISK bottleneck\n- Latency + high CPU (orange lines, top-right) = CPU bottleneck\n- Latency + swap usage (red line, mid-right) = MEMORY bottleneck\n- All flat but latency high = connection pool or network issue",
+  "tags": ["hardware", "bottleneck", "system", "highth"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "API Latency vs CPU I/O Wait (Disk Bottleneck Indicator)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "description": "If p95 latency correlates with CPU iowait, the bottleneck is disk I/O. If iowait stays low, disk is NOT the bottleneck.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "iowait.*" }, "properties": [{ "id": "custom.axisPlacement", "value": "right" }, { "id": "unit", "value": "percentunit" }, { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byRegexp", "options": "p.*" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "color", "value": { "mode": "palette-classic" } }] }
+        ]
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket{job=\"highth-api\"}[1m])) * 1000", "legendFormat": "p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"highth-api\"}[1m])) * 1000", "legendFormat": "p95", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job=\"highth-api\"}[1m])) * 1000", "legendFormat": "p99", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"iowait\"}[1m])", "legendFormat": "iowait", "refId": "D" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "API Throughput vs CPU Usage (CPU Bottleneck Indicator)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "description": "If throughput plateaus while CPU hits 100%, the bottleneck is CPU. If CPU stays low, CPU is NOT the bottleneck.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "cpu_.*" }, "properties": [{ "id": "custom.axisPlacement", "value": "right" }, { "id": "unit", "value": "percentunit" }, { "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "RPS" }, "properties": [{ "id": "unit", "value": "reqps" }, { "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "sum(rate(http_requests_total{job=\"highth-api\"}[1m]))", "legendFormat": "RPS", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "1 - rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"idle\"}[1m])", "legendFormat": "cpu_used", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"user\"}[1m])", "legendFormat": "cpu_user", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_cpu_seconds_total{job=\"node-exporter\", mode=\"system\"}[1m])", "legendFormat": "cpu_system", "refId": "D" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Disk I/O (Reads/Writes per Second + Await)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "description": "Disk read/write rates and await time. High await (>10ms) with high iowait indicates disk bottleneck.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 } },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": ".*_await" }, "properties": [{ "id": "custom.axisPlacement", "value": "right" }, { "id": "unit", "value": "ms" }, { "id": "color", "value": { "mode": "palette-classic" } }] },
+          { "matcher": { "id": "byRegexp", "options": ".*_per_sec" }, "properties": [{ "id": "unit", "value": "iops" }, { "id": "color", "value": { "mode": "palette-classic" } }] }
+        ]
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_disk_reads_completed_total{job=\"node-exporter\"}[1m])", "legendFormat": "{{device}}_reads_per_sec", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_disk_writes_completed_total{job=\"node-exporter\"}[1m])", "legendFormat": "{{device}}_writes_per_sec", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_disk_read_time_seconds_total{job=\"node-exporter\"}[1m]) / rate(node_disk_reads_completed_total{job=\"node-exporter\"}[1m]) * 1000", "legendFormat": "{{device}}_read_await", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_disk_write_time_seconds_total{job=\"node-exporter\"}[1m]) / rate(node_disk_writes_completed_total{job=\"node-exporter\"}[1m]) * 1000", "legendFormat": "{{device}}_write_await", "refId": "D" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Memory Usage & Swap (Memory Bottleneck Indicator)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "description": "If swap usage increases during benchmarks, the system is memory-starved. Available memory dropping to zero = memory bottleneck.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }, "unit": "bytes" },
+        "overrides": [
+          { "matcher": { "id": "byRegexp", "options": "swap_.*" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "available" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "used" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "cached" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "node_memory_MemAvailable_bytes{job=\"node-exporter\"}", "legendFormat": "available", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "node_memory_MemTotal_bytes{job=\"node-exporter\"} - node_memory_MemAvailable_bytes{job=\"node-exporter\"}", "legendFormat": "used", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "node_memory_Cached_bytes{job=\"node-exporter\"}", "legendFormat": "cached", "refId": "C" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "node_memory_SwapTotal_bytes{job=\"node-exporter\"} - node_memory_SwapFree_bytes{job=\"node-exporter\"}", "legendFormat": "swap_used", "refId": "D" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "PostgreSQL Buffer Cache Hit Ratio",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+      "description": "Ratio of buffer hits to total reads. >99% = healthy. <95% = needs more shared_buffers or RAM.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.95 }, { "color": "green", "value": 0.99 }] }
+        }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "sum(rate(pg_stat_database_blks_hit{job=\"highth-postgres\"}[5m])) / (sum(rate(pg_stat_database_blks_hit{job=\"highth-postgres\"}[5m])) + sum(rate(pg_stat_database_blks_read{job=\"highth-postgres\"}[5m])))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Redis Memory Usage",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 16 },
+      "description": "Current Redis memory usage relative to maxmemory (512MB). >90% = evictions imminent.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 400000000 }, { "color": "red", "value": 460000000 }] }
+        }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "redis_memory_used_bytes{job=\"highth-redis\"}", "refId": "A" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cache Hit Rate (API-Level)",
+      "type": "gauge",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 16 },
+      "description": "Ratio of Redis cache hits to total lookups from the API. Higher = less database load.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0, "max": 1,
+          "thresholds": { "steps": [{ "color": "red", "value": null }, { "color": "yellow", "value": 0.5 }, { "color": "green", "value": 0.8 }] }
+        }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "sum(rate(cache_hits_total[5m])) / (sum(rate(cache_hits_total[5m])) + sum(rate(cache_misses_total[5m])))", "refId": "A" }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Go Goroutines",
+      "type": "timeseries",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 16 },
+      "description": "Number of active goroutines. Steady growth = leak. Spikes during benchmarks = normal.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1 }, "color": { "mode": "palette-classic" } }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "go_goroutines{job=\"highth-api\"}", "legendFormat": "goroutines", "refId": "A" }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Network Throughput",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "description": "Network bytes sent/received. Useful for identifying network bandwidth limits during benchmarks.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10 }, "unit": "Bps" }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_network_receive_bytes_total{job=\"node-exporter\", device=~\"eth0|ens.*|enp.*\"}[1m])", "legendFormat": "{{device}}_recv", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "rate(node_network_transmit_bytes_total{job=\"node-exporter\", device=~\"eth0|ens.*|enp.*\"}[1m])", "legendFormat": "{{device}}_send", "refId": "B" }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Go GC Pause Duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "description": "Garbage collection pause times. Spikes >10ms during benchmarks indicate GC pressure.",
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "line", "lineWidth": 1 }, "unit": "s" }
+      },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "go_gc_duration_seconds{job=\"highth-api\", quantile=\"0.5\"}", "legendFormat": "gc_p50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "go_gc_duration_seconds{job=\"highth-api\", quantile=\"0.75\"}", "legendFormat": "gc_p75", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" }, "expr": "go_gc_duration_seconds{job=\"highth-api\", quantile=\"1\"}", "legendFormat": "gc_max", "refId": "C" }
+      ]
+    }
+  ]
+}
