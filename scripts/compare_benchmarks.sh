@@ -104,14 +104,14 @@ echo -e "  Current:  ${CURRENT}"
 echo ""
 
 # Extract a metric value from k6 --summary-export JSON
-# Format: .metrics.<metric_name>.values.<stat_key>
+# Format: .metrics.<metric_name>.<stat_key>  (stats are at top level, not nested under .values)
 # k6 stat keys: "avg", "min", "max", "med" (p50), "p(90)", "p(95)", "p(99)"
 extract_metric() {
     local file="$1"
     local metric="$2"
     local stat="$3"
     local val
-    val=$(jq -r ".metrics[\"$metric\"].values[\"$stat\"] // \"N/A\"" "$file" 2>/dev/null)
+    val=$(jq -r ".metrics[\"$metric\"][\"$stat\"] // \"N/A\"" "$file" 2>/dev/null)
     if [ "$val" = "null" ] || [ -z "$val" ]; then
         echo "N/A"
     else
@@ -132,17 +132,21 @@ extract_count() {
 }
 
 # Extract error rate from --summary-export
+# k6 naming: "passes" = requests that failed the check (HTTP errors),
+#             "fails"  = requests that passed the check (successful).
+# Error rate = passes / (passes + fails)
 extract_error_rate() {
     local file="$1"
-    local val
-    val=$(jq -r ".metrics.http_req_failed.values.passes // 0" "$file" 2>/dev/null)
-    local total=$(jq -r ".metrics.http_req_failed.values.fails // 0" "$file" 2>/dev/null)
-    local passes=$((val + total))
-    if [ "$passes" -gt 0 ] 2>/dev/null; then
-        echo "scale=2; $total / $passes * 100" | bc 2>/dev/null || echo "0.00"
+    local error_count
+    local success_count
+    error_count=$(jq -r ".metrics.http_req_failed.passes // 0" "$file" 2>/dev/null)
+    success_count=$(jq -r ".metrics.http_req_failed.fails // 0" "$file" 2>/dev/null)
+    local total=$((error_count + success_count))
+    if [ "$total" -gt 0 ] 2>/dev/null; then
+        echo "scale=2; $error_count / $total * 100" | bc 2>/dev/null || echo "0.00"
     else
-        # Fallback: check if http_req_failed has a rate field
-        local rate=$(jq -r ".metrics.http_req_failed.values.rate // \"N/A\"" "$file" 2>/dev/null)
+        # Fallback: check if http_req_failed has a value field (rate)
+        local rate=$(jq -r ".metrics.http_req_failed.value // \"N/A\"" "$file" 2>/dev/null)
         if [ "$rate" != "N/A" ] && [ "$rate" != "null" ]; then
             echo "scale=2; $rate * 100" | bc 2>/dev/null || echo "0.00"
         else
@@ -219,9 +223,9 @@ for stat_name in p50 p95 p99 avg max; do
     baseline=$(extract_metric "$BASELINE" "http_req_duration" "$k6_key")
     current=$(extract_metric "$CURRENT" "http_req_duration" "$k6_key")
 
-    # Convert seconds to ms (k6 reports in seconds)
-    if [ "$baseline" != "N/A" ]; then baseline=$(echo "scale=2; $baseline * 1000" | bc); fi
-    if [ "$current" != "N/A" ]; then current=$(echo "scale=2; $current * 1000" | bc); fi
+    # Convert seconds to ms (k6 reports in seconds), round to 2 decimal places
+    if [ "$baseline" != "N/A" ]; then baseline=$(printf "%.2f" "$(echo "$baseline * 1000" | bc -l)"); fi
+    if [ "$current" != "N/A" ]; then current=$(printf "%.2f" "$(echo "$current * 1000" | bc -l)"); fi
 
     delta=$(calc_delta "$baseline" "$current")
     delta_formatted=$(format_delta "$delta" "true")
